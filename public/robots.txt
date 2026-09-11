@@ -1,0 +1,24 @@
+# robots.txt for HodaHub E-Commerce Platform
+User-agent: *
+Allow: /
+Allow: /product/
+Allow: /category/
+Allow: /track-order
+Allow: /about-us
+Allow: /contact-us
+Allow: /faq
+Allow: /terms-of-use
+Allow: /privacy-policy
+Allow: /sitemap
+
+# Disallow private user states and transactional paths
+Disallow: /cart
+Disallow: /checkout
+Disallow: /orders
+Disallow: /wishlist
+Disallow: /account/
+Disallow: /admin/
+Disallow: /api/
+
+# Sitemap Location
+Sitemap: https://hodahub.in/sitemap.xml
