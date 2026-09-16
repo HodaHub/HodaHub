@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus,
   Search,
@@ -6,13 +6,25 @@ import {
   Trash2,
   Check,
   X,
+  Edit3,
   Layers,
+  Image as ImageIcon,
+  UploadCloud,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import { adminApi } from '../../lib/adminApi';
 import { Product, BoxOption } from '../../types';
 import { formatPrice } from '../../lib/utils';
 import { CATEGORIES } from '../../data/categories';
 import { getStoredBoxOptions } from '../../data/boxOptions';
+import {
+  uploadToCloudinary,
+  extractCloudinaryPublicId,
+  deleteCloudinaryImage,
+  replaceCloudinaryImage,
+} from '../../lib/cloudinary';
+import { supabase } from '../../lib/supabase';
 
 export const AdminProductsView: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -20,10 +32,12 @@ export const AdminProductsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Form State for "Add Product"
+  // Form State for "Add / Edit Product"
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [brand, setBrand] = useState('HodaHub');
   const [category, setCategory] = useState('electronics');
   const [sku, setSku] = useState('');
@@ -64,6 +78,18 @@ export const AdminProductsView: React.FC = () => {
 
   const [sizes, setSizes] = useState<string[]>(['Standard']);
   const [newSize, setNewSize] = useState('');
+
+  // Image Management Modal State
+  const [selectedProductForImages, setSelectedProductForImages] = useState<Product | null>(null);
+  const [activeReplaceIndex, setActiveReplaceIndex] = useState<number | null>(null);
+  const [replacingImageIdx, setReplacingImageIdx] = useState<number | null>(null);
+  const [deletingImageIdx, setDeletingImageIdx] = useState<number | null>(null);
+  const [uploadingNewImage, setUploadingNewImage] = useState(false);
+  const [uploadingInAddModal, setUploadingInAddModal] = useState(false);
+
+  const replaceFileRef = useRef<HTMLInputElement | null>(null);
+  const addModalFileRef = useRef<HTMLInputElement | null>(null);
+  const newProductImageFileRef = useRef<HTMLInputElement | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -108,6 +134,129 @@ export const AdminProductsView: React.FC = () => {
     }
   };
 
+  // -------------------------------------------------------------
+  // CLOUDINARY MEDIA ACTIONS (Edge Functions + DB Sync)
+  // -------------------------------------------------------------
+  const handleTriggerReplace = (index: number) => {
+    setActiveReplaceIndex(index);
+    replaceFileRef.current?.click();
+  };
+
+  const handleFileChangeForReplace = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || activeReplaceIndex === null || !selectedProductForImages) return;
+
+    const index = activeReplaceIndex;
+    const oldUrl = selectedProductForImages.images[index];
+    const publicId =
+      extractCloudinaryPublicId(oldUrl) ||
+      `hodahub_products/${(selectedProductForImages.sku || selectedProductForImages.id).toLowerCase()}_${index}`;
+
+    setReplacingImageIdx(index);
+    try {
+      const result = await replaceCloudinaryImage({
+        publicId,
+        file,
+        productId: selectedProductForImages.id,
+        oldUrl,
+      });
+
+      const newUrl = result.secure_url || result.url;
+      const updatedImages = [...selectedProductForImages.images];
+      updatedImages[index] = newUrl;
+
+      const updatedProduct = { ...selectedProductForImages, images: updatedImages };
+      setSelectedProductForImages(updatedProduct);
+      setProducts((prev) => prev.map((p) => (p.id === updatedProduct.id ? updatedProduct : p)));
+      showToast(`HodaHub Asset ${publicId} replaced in Cloudinary and DB synchronized.`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to replace image');
+    } finally {
+      setReplacingImageIdx(null);
+      setActiveReplaceIndex(null);
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteImageForProduct = async (imgUrl: string, index: number) => {
+    if (!selectedProductForImages) return;
+    if (!window.confirm('Are you sure you want to permanently destroy this image from Cloudinary and HodaHub?')) {
+      return;
+    }
+
+    const publicId =
+      extractCloudinaryPublicId(imgUrl) ||
+      `hodahub_products/${(selectedProductForImages.sku || selectedProductForImages.id).toLowerCase()}_${index}`;
+
+    setDeletingImageIdx(index);
+    try {
+      await deleteCloudinaryImage({
+        publicId,
+        productId: selectedProductForImages.id,
+        imageUrl: imgUrl,
+      });
+
+      const updatedImages = selectedProductForImages.images.filter((_, i) => i !== index);
+      const updatedProduct = { ...selectedProductForImages, images: updatedImages };
+      setSelectedProductForImages(updatedProduct);
+      setProducts((prev) => prev.map((p) => (p.id === updatedProduct.id ? updatedProduct : p)));
+      showToast(`HodaHub Asset ${publicId} deleted from Cloudinary & DB cleaned.`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete image');
+    } finally {
+      setDeletingImageIdx(null);
+    }
+  };
+
+  const handleAddNewImageToProduct = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedProductForImages) return;
+
+    setUploadingNewImage(true);
+    try {
+      const newUrl = await uploadToCloudinary(file, 'hodahub_products');
+
+      // Insert into product_images table in Supabase
+      try {
+        await supabase.from('product_images').insert({
+          product_id: selectedProductForImages.id,
+          url: newUrl,
+          sort_order: selectedProductForImages.images.length,
+        });
+      } catch (dbErr) {
+        console.warn('HodaHub product_images DB insert warning:', dbErr);
+      }
+
+      const updatedImages = [...selectedProductForImages.images, newUrl];
+      const updatedProduct = { ...selectedProductForImages, images: updatedImages };
+      setSelectedProductForImages(updatedProduct);
+      setProducts((prev) => prev.map((p) => (p.id === updatedProduct.id ? updatedProduct : p)));
+      showToast('New image uploaded to Cloudinary and attached to product.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to upload new image');
+    } finally {
+      setUploadingNewImage(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleFileUploadInAddModal = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingInAddModal(true);
+    try {
+      const newUrl = await uploadToCloudinary(file, 'hodahub_products');
+      setImageList((prev) => [...prev, newUrl]);
+      showToast('Image uploaded to Cloudinary.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to upload image');
+    } finally {
+      setUploadingInAddModal(false);
+      e.target.value = '';
+    }
+  };
+
   const handleAddImage = () => {
     if (imageUrl.trim()) {
       setImageList((prev) => [...prev, imageUrl.trim()]);
@@ -148,7 +297,71 @@ export const AdminProductsView: React.FC = () => {
     }
   };
 
-  const handleCreateProductSubmit = async (e: React.FormEvent) => {
+  const handleOpenAddModal = () => {
+    setEditingProduct(null);
+    setTitle('');
+    setDescription('');
+    setBrand('HodaHub');
+    setCategory('electronics');
+    setSku('');
+    setPrice('');
+    setMrp('');
+    setStockCount('50');
+    setImageList(['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80']);
+    setHighlights(['100% Genuine HodaAssured Item', 'Official Brand Warranty with Fast Dispatch']);
+    setSpecs([
+      { key: 'Warranty', value: '1 Year Brand Warranty' },
+      { key: 'Country of Origin', value: 'India' },
+    ]);
+    setColors([{ name: 'Space Black', hex: '#1e293b' }]);
+    setSizes(['Standard']);
+    setSelectedBoxOptionIds(['box-opt-simple', 'box-opt-premium']);
+    setShowAddModal(true);
+  };
+
+  const handleOpenEditModal = (product: Product) => {
+    setEditingProduct(product);
+    setTitle(product.title || '');
+    setDescription(product.description || '');
+    setBrand(product.brand || 'HodaHub');
+    setCategory(product.category || 'electronics');
+    setSku(product.sku || '');
+    setPrice(String(product.price || ''));
+    setMrp(String(product.originalPrice || ''));
+    setStockCount(String(product.stockCount !== undefined ? product.stockCount : 50));
+    setImageList(product.images && product.images.length > 0 ? [...product.images] : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80']);
+    setHighlights(product.highlights && product.highlights.length > 0 ? [...product.highlights] : ['100% Genuine HodaAssured Item']);
+    const loadedSpecs: { key: string; value: string }[] = [];
+    if (product.specs && typeof product.specs === 'object') {
+      for (const [sectionKey, sectionVal] of Object.entries(product.specs)) {
+        if (typeof sectionVal === 'object' && sectionVal !== null) {
+          for (const [subKey, subVal] of Object.entries(sectionVal)) {
+            loadedSpecs.push({ key: `${sectionKey} - ${subKey}`, value: String(subVal) });
+          }
+        } else {
+          loadedSpecs.push({ key: sectionKey, value: String(sectionVal) });
+        }
+      }
+    }
+    setSpecs(
+      loadedSpecs.length > 0
+        ? loadedSpecs
+        : [
+            { key: 'Warranty', value: '1 Year Brand Warranty' },
+            { key: 'Country of Origin', value: 'India' },
+          ]
+    );
+    setColors(product.colors && product.colors.length > 0 ? [...product.colors] : []);
+    setSizes(product.sizes && product.sizes.length > 0 ? [...product.sizes] : ['Standard']);
+    setSelectedBoxOptionIds(
+      product.availableBoxOptionIds && product.availableBoxOptionIds.length > 0
+        ? [...product.availableBoxOptionIds]
+        : ['box-opt-simple', 'box-opt-premium']
+    );
+    setShowAddModal(true);
+  };
+
+  const handleProductFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !price) {
       alert('Product title and price are required.');
@@ -164,8 +377,9 @@ export const AdminProductsView: React.FC = () => {
       specsRecord[s.key] = s.value;
     });
 
-    const payload = {
+    const payload: any = {
       title: title.trim(),
+      description: description.trim() || undefined,
       brand: brand.trim() || 'HodaHub',
       category,
       sku: generatedSku,
@@ -185,18 +399,39 @@ export const AdminProductsView: React.FC = () => {
     };
 
     try {
-      const created = await adminApi.createProduct(payload);
-      setProducts((prev) => [created, ...prev]);
-      setShowAddModal(false);
-      showToast(`Successfully added "${created.title}" to HodaHub catalog.`);
+      if (editingProduct) {
+        // Edit Mode: Update existing product without creating duplicate
+        const targetId = editingProduct.id || (editingProduct as any)._id;
+        await adminApi.updateProduct(targetId, payload);
+
+        setProducts((prev) =>
+          prev.map((p) => {
+            const pid = p.id || (p as any)._id;
+            if (pid === targetId) {
+              return { ...p, ...payload, id: pid };
+            }
+            return p;
+          })
+        );
+        setShowAddModal(false);
+        setEditingProduct(null);
+        showToast(`Successfully updated "${payload.title}" in HodaHub catalog.`);
+      } else {
+        // Create Mode: Add new product
+        const created = await adminApi.createProduct(payload);
+        setProducts((prev) => [created, ...prev]);
+        setShowAddModal(false);
+        showToast(`Successfully added "${created.title}" to HodaHub catalog.`);
+      }
 
       // Reset form
       setTitle('');
+      setDescription('');
       setPrice('');
       setMrp('');
       setSku('');
     } catch (err: any) {
-      alert(err.message || 'Failed to create product');
+      alert(err.message || 'Failed to save product');
     }
   };
 
@@ -219,7 +454,7 @@ export const AdminProductsView: React.FC = () => {
           </p>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={handleOpenAddModal}
           className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
         >
           <Plus className="w-4 h-4" />
@@ -297,14 +532,17 @@ export const AdminProductsView: React.FC = () => {
                     <tr key={product.id || (product as any)._id} className="hover:bg-slate-50/70 transition-colors">
                       {/* Item Thumbnail & Title */}
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-3">
+                        <div
+                          onClick={() => handleOpenEditModal(product)}
+                          className="flex items-center gap-3 cursor-pointer group"
+                        >
                           <img
                             src={firstImg}
                             alt={product.title}
-                            className="w-10 h-10 object-cover rounded-md border border-slate-200 shrink-0 bg-slate-100"
+                            className="w-10 h-10 object-cover rounded-md border border-slate-200 shrink-0 bg-slate-100 group-hover:border-primary-500 transition-colors"
                           />
                           <div className="max-w-xs">
-                            <div className="font-bold text-slate-900 line-clamp-1">
+                            <div className="font-bold text-slate-900 line-clamp-1 group-hover:text-primary-600 transition-colors">
                               {product.title}
                             </div>
                             <div className="text-[10px] text-slate-500 font-medium">
@@ -368,11 +606,27 @@ export const AdminProductsView: React.FC = () => {
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
+                            onClick={() => handleOpenEditModal(product)}
+                            className="p-1.5 text-slate-700 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors cursor-pointer flex items-center gap-1 font-semibold text-[11px] border border-slate-200 hover:border-primary-200"
+                            title="Edit Product Details"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 text-primary-600" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            onClick={() => setSelectedProductForImages(product)}
+                            className="p-1.5 text-slate-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors cursor-pointer flex items-center gap-1 font-medium text-[11px] border border-slate-200"
+                            title="Manage Cloudinary Images"
+                          >
+                            <ImageIcon className="w-3.5 h-3.5 text-primary-600" />
+                            <span className="hidden md:inline font-mono">({product.images?.length || 0})</span>
+                          </button>
+                          <button
                             onClick={() => handleDeleteProduct(product.id, product.title)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-rose-200"
                             title="Delete Product"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -392,17 +646,22 @@ export const AdminProductsView: React.FC = () => {
             <div className="h-16 px-6 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Layers className="w-5 h-5 text-primary-400" />
-                <h3 className="font-bold text-sm">Add New Product to HodaHub Catalog</h3>
+                <h3 className="font-bold text-sm">
+                  {editingProduct ? `Edit Product: ${editingProduct.title}` : 'Add New Product to HodaHub Catalog'}
+                </h3>
               </div>
               <button
-                onClick={() => setShowAddModal(false)}
+                onClick={() => {
+                  setShowAddModal(false);
+                  setEditingProduct(null);
+                }}
                 className="p-1.5 text-slate-400 hover:text-white rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateProductSubmit} className="p-6 space-y-6 text-xs max-h-[80vh] overflow-y-auto">
+            <form onSubmit={handleProductFormSubmit} className="p-6 space-y-6 text-xs max-h-[80vh] overflow-y-auto">
               {/* Section 1: Basic Details */}
               <div className="space-y-3">
                 <div className="font-bold text-slate-900 uppercase font-mono text-[11px] pb-1 border-b border-slate-100">
@@ -419,6 +678,17 @@ export const AdminProductsView: React.FC = () => {
                       onChange={(e) => setTitle(e.target.value)}
                       placeholder="e.g. Apple MacBook Air M3 (13.6-inch, 16GB, 512GB SSD)"
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:border-primary-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-slate-700 font-semibold mb-1">Product Summary / Description</label>
+                    <textarea
+                      rows={2}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Detailed product overview, warranty notes, and key technical specifications..."
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:border-primary-500 focus:outline-none font-sans"
                     />
                   </div>
 
@@ -512,7 +782,15 @@ export const AdminProductsView: React.FC = () => {
                   3. Product Images (Cloudinary CDN / URLs)
                 </div>
 
-                <div className="flex gap-2">
+                <input
+                  type="file"
+                  ref={addModalFileRef}
+                  accept="image/*"
+                  onChange={handleFileUploadInAddModal}
+                  className="hidden"
+                />
+
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="url"
                     value={imageUrl}
@@ -520,13 +798,33 @@ export const AdminProductsView: React.FC = () => {
                     placeholder="Enter image URL (Cloudinary or HTTPS)"
                     className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs focus:border-primary-500 focus:outline-none"
                   />
-                  <button
-                    type="button"
-                    onClick={handleAddImage}
-                    className="px-3 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 cursor-pointer"
-                  >
-                    Add Image
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleAddImage}
+                      className="px-3 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 cursor-pointer"
+                    >
+                      Add URL
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addModalFileRef.current?.click()}
+                      disabled={uploadingInAddModal}
+                      className="px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      {uploadingInAddModal ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Uploading...</span>
+                        </>
+                      ) : (
+                        <>
+                          <UploadCloud className="w-3.5 h-3.5" />
+                          <span>Upload File</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Previews */}
@@ -749,7 +1047,10 @@ export const AdminProductsView: React.FC = () => {
               <div className="pt-4 border-t border-slate-200 flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => {
+                    setShowAddModal(false);
+                    setEditingProduct(null);
+                  }}
                   className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
@@ -758,10 +1059,181 @@ export const AdminProductsView: React.FC = () => {
                   type="submit"
                   className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-bold shadow-sm cursor-pointer"
                 >
-                  Publish Product to HodaHub
+                  {editingProduct ? 'Save & Update Product' : 'Publish Product to HodaHub'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* HIDDEN FILE INPUTS FOR CLOUDINARY ACTIONS */}
+      <input
+        type="file"
+        ref={replaceFileRef}
+        accept="image/*"
+        onChange={handleFileChangeForReplace}
+        className="hidden"
+      />
+      <input
+        type="file"
+        ref={newProductImageFileRef}
+        accept="image/*"
+        onChange={handleAddNewImageToProduct}
+        className="hidden"
+      />
+
+      {/* HODAHUB CLOUDINARY IMAGE MANAGEMENT MODAL */}
+      {selectedProductForImages && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl border border-slate-200 overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="h-16 px-6 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <ImageIcon className="w-5 h-5 text-primary-400" />
+                <div>
+                  <h3 className="font-bold text-sm">HodaHub Media Manager (Cloudinary)</h3>
+                  <p className="text-[11px] text-slate-400 line-clamp-1">
+                    {selectedProductForImages.title} • SKU: {selectedProductForImages.sku || selectedProductForImages.id}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedProductForImages(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                <div>
+                  <div className="font-bold text-xs text-slate-900">
+                    Product Gallery ({selectedProductForImages.images.length} images)
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Replace or destroy media assets directly in Cloudinary. Changes automatically sync to the HodaHub catalog and Supabase database.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => newProductImageFileRef.current?.click()}
+                  disabled={uploadingNewImage}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  {uploadingNewImage ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Uploading to Cloudinary...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud className="w-3.5 h-3.5" />
+                      <span>Upload & Add Image</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {selectedProductForImages.images.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 text-xs border-2 border-dashed border-slate-200 rounded-xl">
+                  No images currently attached to this product. Click &quot;Upload & Add Image&quot; to upload one to Cloudinary.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {selectedProductForImages.images.map((imgUrl, idx) => {
+                    const publicId = extractCloudinaryPublicId(imgUrl) || `Asset #${idx + 1}`;
+                    const isReplacing = replacingImageIdx === idx;
+                    const isDeleting = deletingImageIdx === idx;
+
+                    return (
+                      <div
+                        key={idx}
+                        className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col justify-between gap-3 shadow-2xs"
+                      >
+                        <div className="flex gap-3">
+                          <div className="w-20 h-20 rounded-lg overflow-hidden bg-white border border-slate-200 shrink-0 relative">
+                            <img
+                              src={imgUrl}
+                              alt={`Product ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            {idx === 0 && (
+                              <span className="absolute top-1 left-1 bg-primary-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-xs">
+                                Primary
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[11px] font-mono font-semibold text-slate-800 break-all line-clamp-2">
+                              {publicId}
+                            </div>
+                            <a
+                              href={imgUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] text-primary-600 hover:underline inline-flex items-center gap-1 mt-1 truncate max-w-full"
+                            >
+                              <span>Open Cloudinary CDN</span>
+                            </a>
+                          </div>
+                        </div>
+
+                        {/* Actions: Replace with overwrite & Delete with destroy */}
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-200/80">
+                          <button
+                            type="button"
+                            onClick={() => handleTriggerReplace(idx)}
+                            disabled={isReplacing || isDeleting}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {isReplacing ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-primary-600" />
+                                <span>Replacing in Cloudinary...</span>
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                                <span>Replace Image</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteImageForProduct(imgUrl, idx)}
+                            disabled={isReplacing || isDeleting}
+                            className="inline-flex items-center justify-center p-2 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                            title="Destroy image from Cloudinary"
+                          >
+                            {isDeleting ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-rose-600" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="h-14 px-6 bg-slate-50 border-t border-slate-200 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedProductForImages(null)}
+                className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

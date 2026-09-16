@@ -69,7 +69,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
 
       if (error) {
-        // If Supabase Phone Auth provider or Twilio is in test mode / not configured
+        // If Supabase Send SMS Hook or MSG91 gateway is in test mode / not configured
         console.warn('Supabase signInWithOtp note:', error.message);
       }
 

@@ -28,6 +28,7 @@ import { useSearchStore } from '../../store/useSearchStore';
 import { useFilterStore } from '../../store/useFilterStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { CATEGORIES } from '../../data/categories';
+import { useCategoriesStore } from '../../store/useCategoriesStore';
 import { formatPrice } from '../../lib/utils';
 import { searchHodaHub, SearchHit } from '../../services/searchApi';
 
@@ -53,6 +54,9 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activePage: _activeP
   const cartCount = useCartStore((state) => state.getTotalCount());
   const cartItems = useCartStore((state) => state.items);
   const cartSubtotal = useCartStore((state) => state.getSubtotal());
+
+  const dynamicCategories = useCategoriesStore((state) => state.categories);
+  const activeCategories = dynamicCategories.length > 0 ? dynamicCategories : CATEGORIES;
 
   const wishlistCount = useWishlistStore((state) => state.items.length);
 
@@ -683,7 +687,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activePage: _activeP
             <span>Top Deals</span>
           </button>
 
-          {CATEGORIES.map((cat, idx) => (
+          {activeCategories.map((cat, idx) => (
             <div
               key={cat.id}
               className={`relative group py-2 sm:py-2.5 flex-shrink-0 ${
@@ -723,10 +727,10 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activePage: _activeP
                     exit={{ opacity: 0, y: 6 }}
                     transition={{ duration: 0.15 }}
                     className={`absolute ${
-                      idx >= 4 ? 'right-0' : 'left-0'
-                    } top-full mt-0 pt-1.5 w-64 sm:w-72 z-50 pointer-events-auto`}
+                      idx > 3 ? 'right-0' : 'left-0'
+                    } top-full mt-0 w-64 bg-white rounded-xl shadow-2xl border border-slate-200 p-3 z-50`}
                   >
-                    <div className="bg-white rounded-xl shadow-dropdown border border-slate-200/90 p-3 relative before:absolute before:-top-2 before:left-0 before:right-0 before:h-2 before:content-['']">
+                    <div className="space-y-1">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
                         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                           Popular in {cat.name}
@@ -741,7 +745,10 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activePage: _activeP
                         </button>
                       </div>
                       <div className="space-y-1">
-                        {cat.subcategories.map((sub) => (
+                        {(cat.subcategories && cat.subcategories.length > 0
+                          ? cat.subcategories
+                          : ['Featured Catalog', 'Best Sellers', 'New Releases']
+                        ).map((sub) => (
                           <button
                             key={sub}
                             type="button"
@@ -757,6 +764,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activePage: _activeP
                           </button>
                         ))}
                       </div>
+                    </div>
                       {cat.badge && (
                         <div
                           onClick={() => handleCategoryNavClick(cat.id)}
@@ -766,7 +774,6 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activePage: _activeP
                           <span>Shop Now →</span>
                         </div>
                       )}
-                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -824,7 +831,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activePage: _activeP
                     Browse Categories
                   </p>
                   <div className="space-y-1">
-                    {CATEGORIES.map((cat) => (
+                    {activeCategories.map((cat) => (
                       <button
                         key={cat.id}
                         onClick={() => {
@@ -1017,7 +1024,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, activePage: _activeP
                   Popular Categories
                 </p>
                 <div className="grid grid-cols-2 gap-2">
-                  {CATEGORIES.map((c) => (
+                  {activeCategories.map((c) => (
                     <button
                       key={c.id}
                       onClick={() => {

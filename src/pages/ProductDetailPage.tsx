@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Heart,
@@ -15,6 +15,7 @@ import {
   MessageCircle,
   RotateCcw,
   Package,
+  Loader2,
 } from 'lucide-react';
 import { ReplacementPolicyModal } from '../components/product/ReplacementPolicyModal';
 import { BoxUpgradeModal } from '../components/product/BoxUpgradeModal';
@@ -27,7 +28,8 @@ import { TrustBadge } from '../components/common/TrustBadge';
 import { ImageMagnifier } from '../components/product/ImageMagnifier';
 import { ProductStrip } from '../components/product/ProductStrip';
 import { PRODUCTS } from '../data/products';
-import { verifyPincode, PincodeInfo, getDeliveryDateString } from '../lib/utils';
+import { getDeliveryDateString } from '../lib/utils';
+import { checkServiceability, DeliveryServiceabilityResult } from '../services/deliveryService';
 import { SEO } from '../components/common/SEO';
 import { generateProductSchema, generateBreadcrumbSchema } from '../lib/jsonLd';
 import { getProductSlug } from '../lib/slugs';
@@ -54,14 +56,21 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
 
   // Pincode state
   const [pincodeInput, setPincodeInput] = useState('560001');
-  const [pincodeResult, setPincodeResult] = useState<PincodeInfo>({
-    valid: true,
-    city: 'Bengaluru',
-    state: 'Karnataka',
-    deliveryDays: 1,
-    codAvailable: true,
-    freeDelivery: true,
-  });
+  const [isCheckingPincode, setIsCheckingPincode] = useState(false);
+  const [pincodeResult, setPincodeResult] = useState<DeliveryServiceabilityResult | null>(null);
+
+  // Dynamically resolve default pincode city & state on component mount (no hardcoded location strings)
+  useEffect(() => {
+    let isMounted = true;
+    checkServiceability('560001').then((res) => {
+      if (isMounted) {
+        setPincodeResult(res);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const addItem = useCartStore((state) => state.addItem);
   const cartItems = useCartStore((state) => state.items);
@@ -73,10 +82,20 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const { toggleWishlist, isInWishlist } = useWishlistStore();
   const isWishlisted = isInWishlist(product.id);
 
-  const handleCheckPincode = (e: React.FormEvent) => {
+  const handleCheckPincode = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = verifyPincode(pincodeInput);
-    setPincodeResult(res);
+    setIsCheckingPincode(true);
+    try {
+      const res = await checkServiceability(pincodeInput);
+      setPincodeResult(res);
+    } catch {
+      setPincodeResult({
+        serviceable: false,
+        error: 'Please enter a valid 6-digit pincode',
+      });
+    } finally {
+      setIsCheckingPincode(false);
+    }
   };
 
   const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -105,7 +124,9 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   ).slice(0, 5);
 
   const productSlug = getProductSlug(product);
-  const businessNumber = '919876543210';
+  const rawWhatsApp = (import.meta.env.VITE_WHATSAPP_NUMBER as string) || '918864088157';
+  const cleanWhatsApp = rawWhatsApp.replace(/\D/g, '');
+  const businessNumber = cleanWhatsApp.length === 10 ? `91${cleanWhatsApp}` : cleanWhatsApp;
   const productPageUrl = typeof window !== 'undefined' ? window.location.href : `https://hodahub.in/product/${productSlug}`;
   const whatsappMessage = `Hi HodaHub, I would like to inquire / order this product:\n\n*Product:* ${product.title}\n*Price:* ₹${product.price.toLocaleString('en-IN')}\n*SKU:* ${product.sku}\n*URL:* ${productPageUrl}`;
   const whatsappUrl = `https://wa.me/${businessNumber}?text=${encodeURIComponent(whatsappMessage)}`;
@@ -161,11 +182,10 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                   key={idx}
                   onClick={() => setSelectedImageIndex(idx)}
                   aria-label={`View ${product.title} image angle ${idx + 1}`}
-                  className={`w-14 h-14 rounded-lg p-1 border-2 transition-all overflow-hidden bg-white min-h-[44px] min-w-[44px] ${
-                    selectedImageIndex === idx
+                  className={`w-14 h-14 rounded-lg p-1 border-2 transition-all overflow-hidden bg-white min-h-[44px] min-w-[44px] ${selectedImageIndex === idx
                       ? 'border-primary-600 shadow-sm ring-1 ring-primary-400'
                       : 'border-slate-200 hover:border-slate-400'
-                  }`}
+                    }`}
                 >
                   <img
                     src={img}
@@ -195,9 +215,8 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                   title="Save to Wishlist"
                 >
                   <Heart
-                    className={`w-4 h-4 ${
-                      isWishlisted ? 'fill-rose-500 text-rose-500' : 'text-slate-400'
-                    }`}
+                    className={`w-4 h-4 ${isWishlisted ? 'fill-rose-500 text-rose-500' : 'text-slate-400'
+                      }`}
                     strokeWidth={2}
                   />
                 </button>
@@ -227,11 +246,10 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                     className={`w-2.5 h-2.5 rounded-full transition-all min-w-[24px] min-h-[24px] flex items-center justify-center`}
                   >
                     <span
-                      className={`block rounded-full transition-all ${
-                        selectedImageIndex === idx
+                      className={`block rounded-full transition-all ${selectedImageIndex === idx
                           ? 'w-6 h-2 bg-primary-600'
                           : 'w-2 h-2 bg-slate-300 hover:bg-slate-400'
-                      }`}
+                        }`}
                     />
                   </button>
                 ))}
@@ -245,11 +263,10 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               type="button"
               onClick={handleAddToCart}
               whileTap={{ scale: 0.98 }}
-              className={`py-3.5 px-4 min-h-[48px] rounded-xl font-extrabold text-sm flex items-center justify-center gap-2 transition-all shadow-md focus:outline-none ${
-                isAdded
+              className={`py-3.5 px-4 min-h-[48px] rounded-xl font-extrabold text-sm flex items-center justify-center gap-2 transition-all shadow-md focus:outline-none ${isAdded
                   ? 'bg-emerald-600 text-white'
                   : 'bg-primary-600 hover:bg-primary-700 text-white shadow-primary-500/20'
-              }`}
+                }`}
             >
               <AnimatePresence mode="wait">
                 {isAdded ? (
@@ -422,11 +439,10 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                     key={color.name}
                     type="button"
                     onClick={() => setSelectedColor(color.name)}
-                    className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${
-                      selectedColor === color.name
+                    className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${selectedColor === color.name
                         ? 'border-primary-600 ring-2 ring-primary-200 scale-105'
                         : 'border-slate-300 hover:border-slate-400'
-                    }`}
+                      }`}
                     style={{ backgroundColor: color.hex }}
                     title={color.name}
                   >
@@ -452,11 +468,10 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                     key={v.value}
                     type="button"
                     onClick={() => setSelectedVariant(v.value)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                      selectedVariant === v.value
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${selectedVariant === v.value
                         ? 'border-primary-600 bg-primary-50 text-primary-700 font-bold'
                         : 'border-slate-200 hover:border-slate-300 text-slate-700'
-                    }`}
+                      }`}
                   >
                     {v.value}
                   </button>
@@ -489,31 +504,40 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
               />
               <button
                 type="submit"
-                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors min-h-[44px] sm:min-h-0"
+                disabled={isCheckingPincode}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white text-xs font-bold rounded-lg transition-colors min-h-[44px] sm:min-h-0 flex items-center justify-center min-w-[62px]"
               >
-                Check
+                {isCheckingPincode ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  'Check'
+                )}
               </button>
             </form>
 
-            {pincodeResult.valid ? (
+            {pincodeResult?.serviceable && pincodeResult.city && pincodeResult.state ? (
               <div className="text-xs text-slate-700 space-y-1 pt-1">
                 <p className="flex items-center gap-1.5 text-emerald-700 font-bold">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
                   <span>
-                    Delivery by <strong>{getDeliveryDateString(pincodeResult.deliveryDays)}</strong> to {pincodeResult.city}, {pincodeResult.state}
+                    Delivery by <strong>{getDeliveryDateString(pincodeResult.estimatedDays || 2)}</strong> to {pincodeResult.city}, {pincodeResult.state}
                   </span>
                 </p>
                 <div className="flex items-center gap-4 text-slate-500 text-[11px] pt-0.5">
                   <span>Free Delivery | Standard Shipping</span>
-                  <span>Cash on Delivery Available</span>
+                  <span>
+                    {pincodeResult.codAvailable !== false
+                      ? 'Cash on Delivery Available'
+                      : 'Prepaid Orders Only'}
+                  </span>
                 </div>
               </div>
-            ) : (
-              <p className="text-xs text-rose-600 flex items-center gap-1 pt-1 font-medium">
-                <AlertCircle className="w-3.5 h-3.5" />
-                <span>Please enter a valid 6-digit postal pincode.</span>
+            ) : pincodeResult && !pincodeResult.serviceable ? (
+              <p className="text-xs text-rose-600 flex items-center gap-1.5 pt-1 font-medium">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{pincodeResult.error || 'Please enter a valid 6-digit pincode'}</span>
               </p>
-            )}
+            ) : null}
           </div>
 
           {/* HIGHLIGHTS BULLET LIST */}
@@ -539,31 +563,28 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
         <div className="flex border-b border-slate-200 bg-slate-50/60 text-xs font-bold text-slate-600">
           <button
             onClick={() => setActiveTab('specs')}
-            className={`px-6 py-3.5 border-b-2 transition-all ${
-              activeTab === 'specs'
+            className={`px-6 py-3.5 border-b-2 transition-all ${activeTab === 'specs'
                 ? 'border-primary-600 text-primary-700 bg-white'
                 : 'border-transparent hover:text-slate-950'
-            }`}
+              }`}
           >
             Specifications
           </button>
           <button
             onClick={() => setActiveTab('reviews')}
-            className={`px-6 py-3.5 border-b-2 transition-all ${
-              activeTab === 'reviews'
+            className={`px-6 py-3.5 border-b-2 transition-all ${activeTab === 'reviews'
                 ? 'border-primary-600 text-primary-700 bg-white'
                 : 'border-transparent hover:text-slate-950'
-            }`}
+              }`}
           >
             Ratings & Reviews ({product.reviews?.length || 0})
           </button>
           <button
             onClick={() => setActiveTab('faq')}
-            className={`px-6 py-3.5 border-b-2 transition-all ${
-              activeTab === 'faq'
+            className={`px-6 py-3.5 border-b-2 transition-all ${activeTab === 'faq'
                 ? 'border-primary-600 text-primary-700 bg-white'
                 : 'border-transparent hover:text-slate-950'
-            }`}
+              }`}
           >
             Questions & Answers
           </button>

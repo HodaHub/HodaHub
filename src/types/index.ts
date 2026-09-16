@@ -65,7 +65,9 @@ export interface Product {
   warranty: string;
   deliveryDays: number;
   colors?: ProductColor[];
+  sizes?: string[];
   variants?: ProductVariant[];
+  description?: string;
   tag?: 'Deal of the Day' | 'Top Pick' | 'Trending' | 'Best Seller' | 'Mega Deal';
   reviews?: ProductReview[];
   availableBoxOptionIds?: string[];

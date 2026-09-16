@@ -358,7 +358,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
 
             const itemsPayload = cartItems.map((item) => ({
               order_id: dbOrder.id,
-              product_id: (item.product as any).id || 'p1000000-0000-0000-0000-000000000001',
+              product_id: (item.product as any).id || 'a1000000-0000-0000-0000-000000000001',
               quantity: item.quantity,
               price_at_purchase: item.product.price,
             }));
@@ -448,8 +448,8 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
       const hasScript = await loadRazorpay();
       if (hasScript && (window as any).Razorpay) {
         try {
-          // Obtain order ID from Edge Function (server-side secret)
-          let rzpKeyId = 'rzp_test_HodaHubSandbox';
+          // Obtain order ID from Edge Function or .env
+          let rzpKeyId = (import.meta.env.VITE_RAZORPAY_KEY_ID as string) || 'rzp_test_HodaHubSandbox';
           let gatewayOrderId = undefined;
 
           try {

@@ -22,12 +22,13 @@ HodaHub is a high-performance e-commerce platform built with **React**, **Vite**
    - Guest checkouts supported without creating `auth.users` rows.
 
 3. **Supabase Edge Functions (Deno)**:
+   - `msg91-send-sms-hook`: Supabase Auth Send SMS Hook for Phone Login OTP via MSG91 (DLT compliant).
+   - `send-notification`: Transactional SMS order lifecycle updates via MSG91 Flow API.
    - `create-razorpay-order`: Server-side Razorpay order generation (protects Key Secret).
    - `verify-razorpay-payment`: Server-side HMAC SHA-256 signature verification & order status update.
    - `create-delhivery-shipment`: Manifests Delhivery shipments with `DELHIVERY_API_KEY`.
    - `track-shipment`: Polls Delhivery tracking status.
    - `check-pincode-serviceability`: Checks delivery TAT & COD eligibility via Delhivery.
-   - `send-notification`: SMS/WhatsApp triggers via Twilio.
    - `guest-order-track`: Safely looks up guest orders by phone + order_id using `service_role` key without exposing `orders` table to anonymous SELECT.
 
 4. **Media Management (Cloudinary)**:
@@ -66,10 +67,23 @@ HodaHub is a high-performance e-commerce platform built with **React**, **Vite**
 3. Run the seed data file:
    [`supabase/seed.sql`](supabase/seed.sql)
 
-### 2. Configure Phone Auth Provider
-1. In Supabase Dashboard, navigate to **Authentication** -> **Providers** -> **Phone**.
-2. Enable Phone Provider and select your SMS Gateway (Twilio recommended).
-3. Provide your Twilio Account SID, Auth Token, and Sender Number.
+### 2. Configure MSG91 & Supabase "Send SMS Hook"
+Because MSG91 is not in Supabase's native built-in provider dropdown, HodaHub uses Supabase's **Send SMS Hook** with our Edge Function:
+1. **MSG91 Setup (DLT Compliance)**:
+   - Sign up at [msg91.com](https://msg91.com) and retrieve your **Auth Key**.
+   - Register a 6-character Sender ID (e.g., `HODAHB`) on the DLT portal.
+   - Register DLT templates for:
+     - `OTP`: Login verification code
+     - `ORDER_PLACED`: Order confirmation with tracking link
+     - `SHIPPED`: Dispatch notification with courier & AWB
+     - `OUT_FOR_DELIVERY`: Out for delivery alert
+     - `DELIVERED`: Delivery completion alert
+2. **Supabase Auth Configuration**:
+   - In Supabase Dashboard, go to **Authentication** -> **Providers** -> **Phone** and enable Phone Provider (disable any legacy external provider config).
+   - Go to **Authentication** -> **Hooks**.
+   - Under **Send SMS hook**, click **Add hook** (type: **HTTPS**).
+   - Set the URL to: `https://<your-project-ref>.supabase.co/functions/v1/msg91-send-sms-hook`
+   - Click **Generate Secret** and copy the secret (`whsec_...`). Set this as `SMS_HOOK_SECRET` in Edge Function secrets.
 
 ### 3. Setting the First Administrator Account
 Because no signup flow assigns `role = 'admin'` automatically for security reasons, the initial admin account must be promoted manually after completing their first Phone OTP login:
@@ -91,19 +105,25 @@ Set server-side secret keys:
 supabase secrets set RAZORPAY_KEY_ID="rzp_live_xxx" \
                      RAZORPAY_KEY_SECRET="your_razorpay_secret" \
                      DELHIVERY_API_KEY="your_delhivery_key" \
-                     TWILIO_ACCOUNT_SID="your_twilio_sid" \
-                     TWILIO_AUTH_TOKEN="your_twilio_token" \
-                     TWILIO_PHONE_NUMBER="+1234567890"
+                     MSG91_AUTH_KEY="your_msg91_auth_key" \
+                     MSG91_SENDER_ID="HODAHB" \
+                     SMS_HOOK_SECRET="whsec_your_hook_secret" \
+                     MSG91_TEMPLATE_ID_OTP="your_otp_template_id" \
+                     MSG91_TEMPLATE_ID_ORDER_PLACED="your_order_placed_template_id" \
+                     MSG91_TEMPLATE_ID_SHIPPED="your_shipped_template_id" \
+                     MSG91_TEMPLATE_ID_OUT_FOR_DELIVERY="your_ofd_template_id" \
+                     MSG91_TEMPLATE_ID_DELIVERED="your_delivered_template_id"
 ```
 
 Deploy all Edge Functions:
 ```bash
+supabase functions deploy msg91-send-sms-hook --no-verify-jwt
+supabase functions deploy send-notification
 supabase functions deploy create-razorpay-order
 supabase functions deploy verify-razorpay-payment
 supabase functions deploy create-delhivery-shipment
 supabase functions deploy track-shipment
 supabase functions deploy check-pincode-serviceability
-supabase functions deploy send-notification
 supabase functions deploy guest-order-track
 ```
 

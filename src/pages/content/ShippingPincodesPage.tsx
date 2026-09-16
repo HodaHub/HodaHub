@@ -1,31 +1,36 @@
 import React, { useState } from 'react';
 import { ContentPageLayout } from '../../components/common/ContentPageLayout';
-import { Truck, MapPin, CheckCircle2, Clock, ShieldCheck } from 'lucide-react';
+import { Truck, MapPin, CheckCircle2, Clock, ShieldCheck, Loader2 } from 'lucide-react';
+import { checkServiceability } from '../../services/deliveryService';
 
 export const ShippingPincodesPage: React.FC<{ onNavigate?: (page: string) => void }> = ({ onNavigate }) => {
   const [pincode, setPincode] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
 
-  const checkPincode = (e: React.FormEvent) => {
+  const checkPincode = async (e: React.FormEvent) => {
     e.preventDefault();
-    const clean = pincode.trim();
-    if (clean.length !== 6 || !/^\d{6}$/.test(clean)) {
-      setResult({ error: 'Please enter a valid 6-digit postal pincode.' });
-      return;
+    setIsLoading(true);
+    try {
+      const res = await checkServiceability(pincode);
+      if (res.serviceable && res.city && res.state) {
+        setResult({
+          pincode: pincode.trim(),
+          city: res.city,
+          state: res.state,
+          deliverySpeed: `${res.estimatedDays || 2} Business Days`,
+          codAvailable: res.codAvailable !== false,
+          freeDeliveryEligible: true,
+          hub: `${res.city} Hub (${res.state})`,
+        });
+      } else {
+        setResult({ error: res.error || 'Please enter a valid 6-digit pincode' });
+      }
+    } catch {
+      setResult({ error: 'Please enter a valid 6-digit pincode' });
+    } finally {
+      setIsLoading(false);
     }
-
-    // Metro vs Regional simulation
-    const isMetro = ['5600', '1100', '4000', '7000', '6000', '5000'].some((prefix) =>
-      clean.startsWith(prefix)
-    );
-
-    setResult({
-      pincode: clean,
-      deliverySpeed: isMetro ? 'Next Day Express' : 'Standard 2-3 Days',
-      codAvailable: true,
-      freeDeliveryEligible: true,
-      hub: isMetro ? 'Metro Automated Sorting Center' : 'Regional Hub',
-    });
   };
 
   return (
@@ -56,9 +61,10 @@ export const ShippingPincodesPage: React.FC<{ onNavigate?: (page: string) => voi
           </div>
           <button
             type="submit"
-            className="px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white font-bold text-xs rounded-xl transition-colors shadow-md"
+            disabled={isLoading}
+            className="px-5 py-2.5 bg-primary-500 hover:bg-primary-600 disabled:opacity-60 text-white font-bold text-xs rounded-xl transition-colors shadow-md flex items-center justify-center min-w-[130px]"
           >
-            Check Availability
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Check Availability'}
           </button>
         </form>
 

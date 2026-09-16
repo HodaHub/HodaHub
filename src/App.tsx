@@ -23,6 +23,8 @@ const AdminLoginPage = lazy(() => import('./pages/admin/AdminLoginPage').then((m
 const AdminLayout = lazy(() => import('./components/admin/AdminLayout').then((m) => ({ default: m.AdminLayout })));
 const AdminDashboardView = lazy(() => import('./components/admin/AdminDashboardView').then((m) => ({ default: m.AdminDashboardView })));
 const AdminProductsView = lazy(() => import('./components/admin/AdminProductsView').then((m) => ({ default: m.AdminProductsView })));
+const AdminCategoriesView = lazy(() => import('./components/admin/AdminCategoriesView').then((m) => ({ default: m.AdminCategoriesView })));
+const AdminBannersView = lazy(() => import('./components/admin/AdminBannersView').then((m) => ({ default: m.AdminBannersView })));
 const AdminOrdersView = lazy(() => import('./components/admin/AdminOrdersView').then((m) => ({ default: m.AdminOrdersView })));
 const AdminReviewsView = lazy(() => import('./components/admin/AdminReviewsView').then((m) => ({ default: m.AdminReviewsView })));
 const AdminCouponsView = lazy(() => import('./components/admin/AdminCouponsView').then((m) => ({ default: m.AdminCouponsView })));
@@ -55,6 +57,7 @@ import { useAuthStore } from './store/useAuthStore';
 import { useAdminAuthStore } from './store/useAdminAuthStore';
 import { AdminTab } from './components/admin/AdminLayout';
 import { getProductSlug, findProductBySlug, getCategorySlug, findCategoryBySlug } from './lib/slugs';
+import { joinVisitorPresence, logPageView } from './lib/visitorTracker';
 
 // Lightweight accessible loading fallback for lazy-loaded route bundles
 const RouteLoadingFallback = () => (
@@ -75,6 +78,17 @@ export function App() {
 
   const setCategoryFilter = useFilterStore((state) => state.setCategory);
   const { isAuthenticated, openAuthModal } = useAuthStore();
+
+  // 1. Realtime Presence Visitor Tracking (Joins site-visitors channel)
+  useEffect(() => {
+    joinVisitorPresence(window.location.pathname);
+  }, []);
+
+  // 2. Historical Pageviews Tracking (Lightweight insert on route transition)
+  useEffect(() => {
+    const currentPath = window.location.pathname || '/';
+    logPageView(currentPath, useAuthStore.getState().user?._id);
+  }, [currentPage, pageParams, adminTab]);
 
   // URL Path detection on initial mount & back/forward navigation
   useEffect(() => {
@@ -117,6 +131,8 @@ export function App() {
         let tab: AdminTab = 'dashboard';
         if (pathname === '/admin/orders' || pathname === '/admin-orders') tab = 'orders';
         else if (pathname === '/admin/products') tab = 'products';
+        else if (pathname === '/admin/categories') tab = 'categories';
+        else if (pathname === '/admin/banners') tab = 'banners';
         else if (pathname === '/admin/reviews') tab = 'reviews';
         else if (pathname === '/admin/coupons') tab = 'coupons';
         else if (pathname === '/admin/customers') tab = 'customers';
@@ -318,6 +334,8 @@ export function App() {
         >
           {adminTab === 'dashboard' && <AdminDashboardView onNavigateTab={handleSelectAdminTab} />}
           {adminTab === 'products' && <AdminProductsView />}
+          {adminTab === 'categories' && <AdminCategoriesView />}
+          {adminTab === 'banners' && <AdminBannersView />}
           {adminTab === 'boxes' && <AdminBoxOptionsView />}
           {adminTab === 'orders' && <AdminOrdersView />}
           {adminTab === 'reviews' && <AdminReviewsView />}

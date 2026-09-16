@@ -40,39 +40,30 @@ export function getDeliveryDateString(daysFromNow: number = 2): string {
 
 export interface PincodeInfo {
   valid: boolean;
+  serviceable?: boolean;
   city?: string;
   state?: string;
   deliveryDays?: number;
   codAvailable?: boolean;
   freeDelivery?: boolean;
+  error?: string;
 }
 
 export function verifyPincode(pincode: string): PincodeInfo {
-  const cleaned = pincode.trim();
-  if (!/^\d{6}$/.test(cleaned)) {
-    return { valid: false };
+  const cleaned = String(pincode || '').trim().replace(/\D/g, '');
+  if (!/^\d{6}$/.test(cleaned) || cleaned.startsWith('0')) {
+    return {
+      valid: false,
+      serviceable: false,
+      error: 'Please enter a valid 6-digit pincode',
+    };
   }
 
-  const firstDigit = cleaned[0];
-  const pincodeMap: Record<string, { city: string; state: string; days: number }> = {
-    '1': { city: 'New Delhi', state: 'Delhi', days: 1 },
-    '2': { city: 'Lucknow', state: 'Uttar Pradesh', days: 2 },
-    '3': { city: 'Ahmedabad', state: 'Gujarat', days: 2 },
-    '4': { city: 'Mumbai', state: 'Maharashtra', days: 1 },
-    '5': { city: 'Hyderabad', state: 'Telangana', days: 1 },
-    '6': { city: 'Chennai', state: 'Tamil Nadu', days: 2 },
-    '7': { city: 'Kolkata', state: 'West Bengal', days: 2 },
-    '8': { city: 'Patna', state: 'Bihar', days: 3 },
-    '9': { city: 'Pune', state: 'Maharashtra', days: 2 },
-  };
-
-  const info = pincodeMap[firstDigit] || { city: 'Bangalore', state: 'Karnataka', days: 1 };
   return {
     valid: true,
-    city: info.city,
-    state: info.state,
-    deliveryDays: info.days,
-    codAvailable: true,
+    serviceable: true,
     freeDelivery: true,
+    codAvailable: true,
   };
 }
+
