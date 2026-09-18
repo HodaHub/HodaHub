@@ -45,6 +45,7 @@ export const AdminCategoriesView: React.FC = () => {
   const [badge, setBadge] = useState('');
   const [sortOrder, setSortOrder] = useState<number>(1);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Deletion warning modal
   const [deleteWarning, setDeleteWarning] = useState<{
@@ -121,11 +122,13 @@ export const AdminCategoriesView: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     if (!name.trim()) {
       alert('Category name is required.');
       return;
     }
 
+    setSubmitting(true);
     try {
       if (editingCategory) {
         await updateCategory(editingCategory.id, {
@@ -151,6 +154,8 @@ export const AdminCategoriesView: React.FC = () => {
       setShowModal(false);
     } catch (err: any) {
       alert(err.message || 'Failed to save category');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -198,8 +203,9 @@ export const AdminCategoriesView: React.FC = () => {
     showToast('Storefront category display order updated.');
   };
 
-  // Filtered & sorted categories
-  const sortedCategories = [...categories].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  // Filtered & sorted categories with ID deduplication
+  const uniqueCategories = Array.from(new Map(categories.map((c) => [c.id, c])).values());
+  const sortedCategories = uniqueCategories.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   const filteredCategories = sortedCategories.filter((c) =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.slug.toLowerCase().includes(searchQuery.toLowerCase())
@@ -590,9 +596,14 @@ export const AdminCategoriesView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-lg transition-all shadow-sm"
+                  disabled={submitting}
+                  className="px-5 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-bold rounded-lg transition-all shadow-sm cursor-pointer"
                 >
-                  {editingCategory ? 'Save & Update Category' : 'Create Category'}
+                  {submitting
+                    ? 'Saving...'
+                    : editingCategory
+                    ? 'Save & Update Category'
+                    : 'Create Category'}
                 </button>
               </div>
             </form>

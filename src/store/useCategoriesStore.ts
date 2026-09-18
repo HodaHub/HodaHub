@@ -39,8 +39,10 @@ export const useCategoriesStore = create<CategoriesStoreState>((set, get) => ({
     try {
       const created = await adminApi.createCategory(data);
       const current = get().categories;
+      // Deduplicate: ensure an item with this id does not already exist in state
+      const filtered = current.filter((c) => c.id !== created.id && c.slug !== created.slug);
       set({
-        categories: [...current, created].sort((a, b) => a.sortOrder - b.sortOrder),
+        categories: [...filtered, created].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
         loading: false,
       });
       return created;

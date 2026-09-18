@@ -775,7 +775,9 @@ export const adminApi = {
           badge: created.badge,
           createdAt: created.created_at,
         };
-        mockCategories.push(newCat);
+        if (!mockCategories.some((c) => c.id === newCat.id)) {
+          mockCategories.push(newCat);
+        }
         return newCat;
       }
     } catch (err) {
@@ -794,7 +796,9 @@ export const adminApi = {
       badge: data.badge || '',
       createdAt: new Date().toISOString(),
     };
-    mockCategories.push(fallbackCat);
+    if (!mockCategories.some((c) => c.id === fallbackCat.id)) {
+      mockCategories.push(fallbackCat);
+    }
     return fallbackCat;
   },
 

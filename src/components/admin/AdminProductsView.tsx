@@ -34,6 +34,7 @@ export const AdminProductsView: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [submittingProduct, setSubmittingProduct] = useState(false);
 
   // Form State for "Add / Edit Product"
   const [title, setTitle] = useState('');
@@ -398,6 +399,9 @@ export const AdminProductsView: React.FC = () => {
       deliveryDays: 2,
     };
 
+    if (submittingProduct) return;
+    setSubmittingProduct(true);
+
     try {
       if (editingProduct) {
         // Edit Mode: Update existing product without creating duplicate
@@ -417,9 +421,13 @@ export const AdminProductsView: React.FC = () => {
         setEditingProduct(null);
         showToast(`Successfully updated "${payload.title}" in HodaHub catalog.`);
       } else {
-        // Create Mode: Add new product
+        // Create Mode: Add new product with deduplication
         const created = await adminApi.createProduct(payload);
-        setProducts((prev) => [created, ...prev]);
+        setProducts((prev) => {
+          const targetId = created.id || (created as any)._id;
+          const filtered = prev.filter((p) => (p.id || (p as any)._id) !== targetId);
+          return [created, ...filtered];
+        });
         setShowAddModal(false);
         showToast(`Successfully added "${created.title}" to HodaHub catalog.`);
       }
@@ -432,6 +440,8 @@ export const AdminProductsView: React.FC = () => {
       setSku('');
     } catch (err: any) {
       alert(err.message || 'Failed to save product');
+    } finally {
+      setSubmittingProduct(false);
     }
   };
 
@@ -1057,9 +1067,14 @@ export const AdminProductsView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-bold shadow-sm cursor-pointer"
+                  disabled={submittingProduct}
+                  className="px-5 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg font-bold shadow-sm cursor-pointer"
                 >
-                  {editingProduct ? 'Save & Update Product' : 'Publish Product to HodaHub'}
+                  {submittingProduct
+                    ? 'Publishing to HodaHub...'
+                    : editingProduct
+                    ? 'Save & Update Product'
+                    : 'Publish Product to HodaHub'}
                 </button>
               </div>
             </form>

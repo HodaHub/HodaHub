@@ -51,7 +51,8 @@ export const useBannersStore = create<BannersStoreState>((set, get) => ({
     set({ loading: true });
     try {
       const created = await adminApi.createBanner(data);
-      const updatedList = [...get().banners, created].sort((a, b) => a.sortOrder - b.sortOrder);
+      const filtered = get().banners.filter((b) => b.id !== created.id);
+      const updatedList = [...filtered, created].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
       set({ banners: updatedList, loading: false });
       get().fetchLiveBanners();
       return created;
