@@ -42,79 +42,97 @@ const getInitialSession = () => {
 const initialSession = getInitialSession();
 
 export const useAdminAuthStore = create<AdminAuthState>((set, get) => ({
-  adminToken: initialSession.token || 'mock_hodahub_admin_session',
-  adminRefreshToken: initialSession.refreshToken,
+  adminToken: initialSession.token || null,
+  adminRefreshToken: initialSession.refreshToken || null,
   adminUser: initialSession.user,
-  isAuthenticated: !!initialSession.user && initialSession.user.role === 'admin',
+  isAuthenticated: !!initialSession.user && initialSession.user.role === 'admin' && !!initialSession.token,
   isLoading: false,
   error: null,
 
   login: async (emailOrPhone: string, password = '') => {
     set({ isLoading: true, error: null });
     const cleanInput = emailOrPhone.trim();
+    const cleanPassword = password.trim();
+
+    if (!cleanInput || !cleanPassword) {
+      const errMsg = 'Please enter both your admin email and security password.';
+      set({ isLoading: false, error: errMsg });
+      return { success: false, error: errMsg };
+    }
 
     try {
-      // 1. Check if user is already authenticated in Supabase or attempt Supabase password/session verification
-      const { data: sessionData } = await supabase.auth.getSession();
-      const currentUserId = sessionData?.session?.user?.id;
-
-      if (currentUserId) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', currentUserId)
-          .single();
-
-        if (profile && profile.role === 'admin') {
-          const adminUser: AdminUser = {
-            _id: profile.id,
-            name: profile.name || 'HodaHub Administrator',
-            email: profile.email || 'admin@hodahub.in',
-            phone: profile.phone,
-            role: 'admin',
-          };
-          const session = { token: sessionData.session?.access_token || 'supabase_admin_session', user: adminUser };
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-
-          set({
-            adminToken: session.token,
-            adminUser,
-            isAuthenticated: true,
-            isLoading: false,
-            error: null,
+      // 1. Try real Supabase email/password authentication if available
+      if (cleanInput.includes('@')) {
+        try {
+          const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+            email: cleanInput,
+            password: cleanPassword,
           });
-          return { success: true };
+
+          if (!authErr && authData?.user && authData?.session) {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', authData.user.id)
+              .single();
+
+            if (profile && profile.role === 'admin') {
+              const adminUser: AdminUser = {
+                _id: profile.id,
+                name: profile.name || 'Administrator',
+                email: profile.email || cleanInput,
+                phone: profile.phone,
+                role: 'admin',
+              };
+              const session = {
+                token: authData.session.access_token,
+                refreshToken: authData.session.refresh_token,
+                user: adminUser,
+              };
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+
+              set({
+                adminToken: session.token,
+                adminRefreshToken: session.refreshToken,
+                adminUser,
+                isAuthenticated: true,
+                isLoading: false,
+                error: null,
+              });
+              return { success: true };
+            }
+          }
+        } catch {
+          // Fall through to configured credentials check
         }
       }
 
-      // 2. Direct Admin Credentials & Demo Mode Check
+      // 2. Configured Admin Credentials from Environment Variables
+      const configuredEmail = (import.meta.env.VITE_ADMIN_EMAIL || 'admin@hodahub.in').trim().toLowerCase();
+      const configuredPassword = (import.meta.env.VITE_ADMIN_PASSWORD || 'Admin@HodaHub2026').trim();
+
       if (
-        (cleanInput.toLowerCase() === 'admin@hodahub.in' ||
-         cleanInput.toLowerCase() === 'admin@hodahub.com' ||
-         cleanInput.toLowerCase() === 'admin' ||
-         cleanInput === '9900011223' ||
-         cleanInput === '+919900011223') &&
-        (password === 'Admin@HodaHub2026' || password === 'admin' || !password)
+        cleanInput.toLowerCase() === configuredEmail &&
+        cleanPassword === configuredPassword
       ) {
-        const mockAdminUser: AdminUser = {
-          _id: currentUserId || 'admin-001',
+        const adminUser: AdminUser = {
+          _id: 'admin_root',
           name: 'HodaHub Administrator',
-          email: 'admin@hodahub.in',
-          phone: '+91 99000 11223',
+          email: configuredEmail,
           role: 'admin',
         };
-        const mockToken = 'hodahub_admin_jwt_token_2026';
+        const token = `hodahub_adm_${Date.now()}`;
         const session = {
-          token: mockToken,
-          refreshToken: 'hodahub_admin_refresh_token_2026',
-          user: mockAdminUser,
+          token,
+          refreshToken: `ref_${Date.now()}`,
+          user: adminUser,
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
 
         set({
-          adminToken: mockToken,
+          adminToken: token,
           adminRefreshToken: session.refreshToken,
-          adminUser: mockAdminUser,
+          adminUser,
           isAuthenticated: true,
           isLoading: false,
           error: null,
@@ -122,7 +140,7 @@ export const useAdminAuthStore = create<AdminAuthState>((set, get) => ({
         return { success: true };
       }
 
-      const errMsg = 'Access denied. Account must have role="admin" in Supabase profiles.';
+      const errMsg = 'Invalid administrator credentials. Access denied.';
       set({ isLoading: false, error: errMsg });
       return { success: false, error: errMsg };
     } catch (err: any) {

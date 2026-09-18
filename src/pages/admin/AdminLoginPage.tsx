@@ -12,8 +12,8 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
   onLoginSuccess,
   onNavigateStorefront,
 }) => {
-  const [email, setEmail] = useState('admin@hodahub.com');
-  const [password, setPassword] = useState('Admin@HodaHub2026');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const { login, isLoading, error, clearError } = useAdminAuthStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -23,12 +23,6 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
     if (result.success) {
       onLoginSuccess();
     }
-  };
-
-  const handleFillTestCredentials = () => {
-    setEmail('admin@hodahub.com');
-    setPassword('Admin@HodaHub2026');
-    clearError();
   };
 
   return (
@@ -83,7 +77,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@hodahub.com"
+                placeholder="admin@yourdomain.com"
                 className="w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-600 focus:outline-none focus:border-primary-500 font-mono text-xs transition-colors"
               />
             </div>
@@ -100,7 +94,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
+                placeholder="Enter password"
                 className="w-full pl-10 pr-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-600 focus:outline-none focus:border-primary-500 font-mono text-xs transition-colors"
               />
             </div>
@@ -124,24 +118,6 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
             )}
           </button>
         </form>
-
-        {/* Test Credential Quick-Fill Pill */}
-        <div className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl space-y-1.5 text-[11px]">
-          <div className="flex items-center justify-between">
-            <span className="text-slate-400 font-medium">Default Administrator Credentials</span>
-            <button
-              type="button"
-              onClick={handleFillTestCredentials}
-              className="text-primary-400 hover:text-primary-300 font-bold underline cursor-pointer"
-            >
-              Autofill
-            </button>
-          </div>
-          <div className="font-mono text-slate-500 flex justify-between">
-            <span>admin@hodahub.com</span>
-            <span>Admin@HodaHub2026</span>
-          </div>
-        </div>
 
         {/* Back to Storefront Link */}
         <div className="pt-2 border-t border-slate-800/80 text-center">
