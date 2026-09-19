@@ -47,6 +47,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
 
   const cartItems = useCartStore((state) => state.items);
   const finalTotal = useCartStore((state) => state.getFinalTotal());
+  const promoDiscount = useCartStore((state) => state.promoDiscount);
   const clearCart = useCartStore((state) => state.clearCart);
 
   // Determine initial guest checkout state
@@ -346,7 +347,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
               payment_status: paymentStatus,
               subtotal: subtotalAmt,
               box_total: boxAmt,
-              discount: 0,
+              discount: promoDiscount || 0,
               total: finalTotal,
               order_status: 'delivery_date_pending',
             })
@@ -358,9 +359,9 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
 
             const itemsPayload = cartItems.map((item) => ({
               order_id: dbOrder.id,
-              product_id: (item.product as any).id || 'a1000000-0000-0000-0000-000000000001',
+              product_id: (item.product as any).id,
               quantity: item.quantity,
-              price_at_purchase: item.product.price,
+              price: calculateItemUnitPrice(item),
             }));
 
             try {

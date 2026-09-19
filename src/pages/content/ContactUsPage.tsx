@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ContentPageLayout } from '../../components/common/ContentPageLayout';
-import { Mail, Phone, MapPin, Send, CheckCircle2 } from 'lucide-react';
+import { Mail, Phone, MapPin, Send, CheckCircle2, MessageSquare } from 'lucide-react';
+import { inquiryApi } from '../../lib/inquiryApi';
 
 interface ContactUsPageProps {
   onNavigate?: (page: string) => void;
@@ -24,11 +25,12 @@ export const ContactUsPage: React.FC<ContactUsPageProps> = ({ onNavigate }) => {
     setIsSubmitting(true);
 
     try {
-      const generatedInqId = `INQ-${Date.now().toString().slice(-6)}`;
-      setInquiryId(generatedInqId);
+      const res = await inquiryApi.submitInquiry(formData);
+      setInquiryId(res.ticketId);
       setSubmitted(true);
     } catch (err) {
-      setInquiryId(`INQ-${Date.now().toString().slice(-6)}`);
+      const fallbackId = `INQ-${Date.now().toString().slice(-6)}`;
+      setInquiryId(fallbackId);
       setSubmitted(true);
     } finally {
       setIsSubmitting(false);
