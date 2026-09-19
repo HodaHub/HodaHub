@@ -16,6 +16,8 @@ import {
   MapPin,
   X,
   Sparkles,
+  ShoppingBag,
+  MessageCircle,
 } from 'lucide-react';
 import {
   useCartStore,
@@ -64,46 +66,17 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
 
   // Authenticated user addresses (synced with useAuthStore)
   const [userAddresses, setUserAddresses] = useState<Address[]>(() => {
-    if (user?.addresses && user.addresses.length > 0) {
-      return user.addresses;
-    }
-    return [
-      {
-        id: 'addr-1',
-        name: user?.name || 'Anand Rao',
-        phone: user?.phone || '+91 98765 43210',
-        pincode: '560001',
-        locality: 'Indiranagar 100ft Road',
-        addressLine: 'Flat 402, Green Orchid Apartments, 12th Main',
-        city: 'Bengaluru',
-        state: 'Karnataka',
-        type: 'HOME',
-        isDefault: true,
-      },
-      {
-        id: 'addr-2',
-        name: (user?.name || 'Anand Rao') + ' (Office)',
-        phone: user?.phone || '+91 98765 43210',
-        pincode: '560103',
-        locality: 'Outer Ring Road, Bellandur',
-        addressLine: 'Embassy Tech Village, Block B, 4th Floor',
-        city: 'Bengaluru',
-        state: 'Karnataka',
-        type: 'WORK',
-        isDefault: false,
-      },
-    ];
+    return user?.addresses && user.addresses.length > 0 ? user.addresses : [];
   });
 
   const [selectedUserAddressId, setSelectedUserAddressId] = useState<string>(() => {
-    const list = user?.addresses && user.addresses.length > 0 ? user.addresses : null;
-    if (list) {
-      const def = list.find((a: Address) => a.isDefault);
-      return def ? def.id : list[0].id;
-    }
-    return 'addr-1';
+    const list = user?.addresses && user.addresses.length > 0 ? user.addresses : [];
+    const def = list.find((a: Address) => a.isDefault);
+    return def ? def.id : (list[0]?.id || '');
   });
-  const [showNewUserAddressForm, setShowNewUserAddressForm] = useState(false);
+  const [showNewUserAddressForm, setShowNewUserAddressForm] = useState<boolean>(() => {
+    return !user?.addresses || user.addresses.length === 0;
+  });
   const [newUserAddress, setNewUserAddress] = useState({
     name: '',
     phone: '',
@@ -664,6 +637,24 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
           {/* Action CTAs */}
           <div className="pt-2 flex flex-col sm:flex-row gap-3">
             <button
+              onClick={() => {
+                const storeWhatsapp = (import.meta.env.VITE_WHATSAPP_NUMBER as string) || '918864088157';
+                const msg = encodeURIComponent(
+                  `🛍️ *HodaHub Order Confirmation*\n` +
+                  `Order ID: #${confirmedOrderId || 'HODA-ORD'}\n` +
+                  `Customer: ${user?.name || guestName || 'Customer'} (${confirmedPhone || user?.phone || ''})\n` +
+                  `Amount: ₹${finalTotal || 0}\n` +
+                  `Address: ${confirmedAddressSummary || 'Delivery Address'}\n\n` +
+                  `Please confirm receipt and processing of my order.`
+                );
+                window.open(`https://wa.me/${storeWhatsapp}?text=${msg}`, '_blank');
+              }}
+              className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+            >
+              <MessageCircle className="w-4 h-4" />
+              <span>Confirm on WhatsApp</span>
+            </button>
+            <button
               onClick={() => onNavigate('home')}
               className="flex-1 py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs rounded-xl transition-all shadow-md cursor-pointer"
             >
@@ -678,6 +669,34 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
             </button>
           </div>
         </motion.div>
+      </div>
+    );
+  }
+
+  // Empty Cart Guard: If no items and order not just confirmed, display clean empty state
+  if ((!cartItems || cartItems.length === 0) && !confirmedOrderId) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm max-w-2xl mx-auto my-8">
+        <SEO
+          title="Checkout | HodaHub"
+          description="Checkout items in your HodaHub shopping cart."
+          canonicalUrl="https://hodahub.in/checkout"
+          noindex={true}
+        />
+        <div className="w-20 h-20 rounded-full bg-primary-50 text-primary-600 mx-auto flex items-center justify-center mb-4">
+          <ShoppingBag className="w-10 h-10" />
+        </div>
+        <h2 className="text-xl font-extrabold text-slate-900 font-sans">Your Cart is Empty</h2>
+        <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+          There are no products in your cart to checkout. Explore our trending products and top deals to get started.
+        </p>
+        <button
+          onClick={() => onNavigate('home')}
+          className="mt-6 px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer inline-flex items-center gap-2"
+        >
+          <span>Explore Products</span>
+          <ArrowRight className="w-4 h-4" />
+        </button>
       </div>
     );
   }

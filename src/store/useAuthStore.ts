@@ -179,22 +179,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           userName = 'HodaHub Administrator';
           userRole = 'admin';
         } else {
-          userName = 'Anand Rao';
+          userName = 'Customer';
         }
-        addresses = [
-          {
-            id: 'addr-default-1',
-            name: userName,
-            phone: fullPhone,
-            pincode: '560001',
-            locality: 'Indiranagar 100ft Road',
-            addressLine: 'Flat 402, Green Orchid Apts',
-            city: 'Bengaluru',
-            state: 'Karnataka',
-            type: 'HOME',
-            isDefault: true,
-          },
-        ];
+        addresses = [];
       }
 
       const authUser: AuthUser = {
