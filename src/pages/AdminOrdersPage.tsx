@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Calendar, Truck, Clock, CheckCircle2, Search, Filter, ShieldAlert, ArrowLeft, ExternalLink } from 'lucide-react';
-import { PRODUCTS } from '../data/products';
 import { formatPrice } from '../lib/utils';
 import { adminApi } from '../lib/adminApi';
 
@@ -27,65 +26,45 @@ interface AdminOrdersPageProps {
 }
 
 export const AdminOrdersPage: React.FC<AdminOrdersPageProps> = ({ onNavigate }) => {
-  const [orders, setOrders] = useState<AdminOrderRecord[]>([
-    {
-      id: 'ord-101',
-      orderId: 'HODA-ORD-2026-904128',
-      customerName: 'Anand Rao',
-      customerPhone: '+91 98765 43210',
-      customerCity: 'Bengaluru, Karnataka',
-      productTitle: PRODUCTS[0].title,
-      productImage: PRODUCTS[0].images[0],
-      price: PRODUCTS[0].price,
-      orderDate: '04 Sep 2026, 11:30 AM',
-      orderStatus: 'delivery_date_pending',
-      estimatedDeliveryDate: null,
-    },
-    {
-      id: 'ord-102',
-      orderId: 'HODA-ORD-2026-882319',
-      customerName: 'Priya Sharma',
-      customerPhone: '+91 98111 22334',
-      customerCity: 'Mumbai, Maharashtra',
-      productTitle: PRODUCTS[1].title,
-      productImage: PRODUCTS[1].images[0],
-      price: PRODUCTS[1].price,
-      orderDate: '03 Sep 2026, 04:15 PM',
-      orderStatus: 'delivery_date_confirmed',
-      estimatedDeliveryDate: '2026-09-07',
-      deliveryDateSetAt: '03 Sep 2026, 06:00 PM',
-    },
-    {
-      id: 'ord-103',
-      orderId: 'HODA-ORD-2026-774912',
-      customerName: 'Karthik Nair',
-      customerPhone: '+91 99450 67890',
-      customerCity: 'Hyderabad, Telangana',
-      productTitle: PRODUCTS[2].title,
-      productImage: PRODUCTS[2].images[0],
-      price: PRODUCTS[2].price,
-      orderDate: '02 Sep 2026, 09:20 AM',
-      orderStatus: 'delivery_date_confirmed',
-      estimatedDeliveryDate: '2026-09-06',
-      deliveryDateSetAt: '02 Sep 2026, 10:45 AM',
-      isGuestOrder: false,
-    },
-  ]);
+  const [orders, setOrders] = useState<AdminOrderRecord[]>([]);
 
-  // Load any local guest orders from localStorage on mount
+  // Load orders on mount
   React.useEffect(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('hodahub_local_orders') || '[]');
-      if (stored.length > 0) {
-        setOrders((prev) => {
-          const existingIds = new Set(prev.map((o) => o.orderId));
-          const uniqueNew = stored.filter((s: any) => !existingIds.has(s.orderId));
-          return [...uniqueNew, ...prev];
-        });
+    const fetchOrders = async () => {
+      try {
+        const liveOrders = await adminApi.getOrders();
+        const mappedLive: AdminOrderRecord[] = (liveOrders || []).map((o: any) => ({
+          id: o._id || o.id,
+          orderId: o.orderId,
+          customerName: o.guestInfo?.name || o.shippingAddress?.name || 'Customer',
+          customerPhone: o.guestInfo?.phone || o.shippingAddress?.phone || '',
+          customerCity: `${o.shippingAddress?.city || ''}, ${o.shippingAddress?.state || ''}`,
+          productTitle: o.items?.[0]?.title || 'Ordered Item',
+          productImage: o.items?.[0]?.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80',
+          price: o.pricing?.total || 0,
+          orderDate: new Date(o.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          orderStatus: o.orderStatus || 'delivery_date_pending',
+          estimatedDeliveryDate: o.estimatedDeliveryDate || null,
+          isGuestOrder: o.isGuestOrder,
+          addressLine: o.shippingAddress?.addressLine || o.guestInfo?.address?.line1,
+          pincode: o.shippingAddress?.pincode || o.guestInfo?.address?.pincode,
+        }));
+
+        // Merge with locally placed orders
+        const stored = JSON.parse(localStorage.getItem('hodahub_local_orders') || '[]');
+        const existingIds = new Set(mappedLive.map((o) => o.orderId));
+        const uniqueStored = (stored || []).filter((s: any) => !existingIds.has(s.orderId));
+
+        setOrders([...uniqueStored, ...mappedLive]);
+      } catch (e) {
+        try {
+          const stored = JSON.parse(localStorage.getItem('hodahub_local_orders') || '[]');
+          setOrders(stored || []);
+        } catch (_) {}
       }
-    } catch (e) {
-      // ignore
-    }
+    };
+
+    fetchOrders();
   }, []);
 
   const [filterMode, setFilterMode] = useState<'ALL' | 'PENDING' | 'CONFIRMED'>('ALL');

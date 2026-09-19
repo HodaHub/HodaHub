@@ -48,6 +48,8 @@ export interface Product {
   title: string;
   brand: string;
   category: string;
+  categoryId?: string;
+  categoryName?: string;
   subcategory: string;
   price: number;
   originalPrice: number;

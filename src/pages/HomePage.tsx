@@ -11,6 +11,7 @@ import { generateOrganizationSchema, generateWebSiteSchema } from '../lib/jsonLd
 import { findProductBySlug } from '../lib/slugs';
 import { useBannersStore } from '../store/useBannersStore';
 import { useCategoriesStore } from '../store/useCategoriesStore';
+import { useProductsStore } from '../store/useProductsStore';
 
 interface HomePageProps {
   onSelectProduct: (product: Product) => void;
@@ -19,14 +20,19 @@ interface HomePageProps {
 
 export const HomePage: React.FC<HomePageProps> = ({ onSelectProduct, onNavigate }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
 
   const { liveBanners, fetchLiveBanners } = useBannersStore();
   const { categories, fetchCategories } = useCategoriesStore();
+  const { products: liveProducts, fetchProducts } = useProductsStore();
 
   useEffect(() => {
     fetchLiveBanners();
     fetchCategories();
-  }, [fetchLiveBanners, fetchCategories]);
+    fetchProducts();
+  }, [fetchLiveBanners, fetchCategories, fetchProducts]);
+
+  const allProducts = liveProducts || [];
 
   // Active banners: dynamic live banners from admin or fallback default hero banners
   const displayBanners = liveBanners && liveBanners.length > 0 ? liveBanners : null;
@@ -34,19 +40,30 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectProduct, onNavigate 
 
   // Auto-play hero slider
   useEffect(() => {
-    if (bannersCount <= 1) return;
+    if (bannersCount <= 1 || isDragging) return;
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % bannersCount);
     }, 5500);
     return () => clearInterval(timer);
-  }, [bannersCount]);
+  }, [bannersCount, isDragging]);
+
+  const handleDragEnd = (_e: any, info: { offset: { x: number }; velocity: { x: number } }) => {
+    const swipeThreshold = 40;
+    const swipeVelocity = 0.25;
+    if (info.offset.x < -swipeThreshold || info.velocity.x < -swipeVelocity) {
+      setCurrentSlide((prev) => (prev + 1) % bannersCount);
+    } else if (info.offset.x > swipeThreshold || info.velocity.x > swipeVelocity) {
+      setCurrentSlide((prev) => (prev - 1 + bannersCount) % bannersCount);
+    }
+    setTimeout(() => setIsDragging(false), 100);
+  };
 
   const activeCategories = categories && categories.length > 0 ? categories : CATEGORIES;
 
-  const dealsOfTheDay = PRODUCTS.filter((p: Product) => p.tag === 'Deal of the Day' || p.discountPercent >= 20);
-  const topPicks = PRODUCTS.filter((p: Product) => p.category === 'mobiles' || p.tag === 'Top Pick');
-  const trendingElectronics = PRODUCTS.filter((p: Product) => p.category === 'electronics');
-  const fashionAndLifestyle = PRODUCTS.filter((p: Product) => p.category === 'fashion' || p.category === 'home');
+  const dealsOfTheDay = allProducts.filter((p: Product) => p.tag === 'Deal of the Day' || p.discountPercent >= 20);
+  const topPicks = allProducts.filter((p: Product) => p.category === 'mobiles' || p.tag === 'Top Pick');
+  const trendingElectronics = allProducts.filter((p: Product) => p.category === 'electronics' || p.category === 'mobiles');
+  const fashionAndLifestyle = allProducts.filter((p: Product) => p.category === 'fashion' || p.category === 'home' || p.category === 'mens-s-watch');
 
   const homeStructuredData = [
     generateOrganizationSchema(),
@@ -54,13 +71,13 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectProduct, onNavigate 
   ];
 
   const handleBannerClick = (linkUrl: string) => {
-    if (!linkUrl) return;
+    if (isDragging || !linkUrl) return;
     if (linkUrl.startsWith('/category/')) {
       const catSlug = linkUrl.replace('/category/', '');
       onNavigate('plp', { category: catSlug });
     } else if (linkUrl.startsWith('/product/')) {
       const prodSlug = linkUrl.replace('/product/', '');
-      const prod = PRODUCTS.find((p) => p.id === prodSlug) || findProductBySlug(prodSlug);
+      const prod = allProducts.find((p) => p.id === prodSlug) || findProductBySlug(prodSlug);
       if (prod) {
         onSelectProduct(prod);
       } else {
@@ -131,17 +148,22 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectProduct, onNavigate 
                 return (
                   <motion.div
                     key={banner.id}
+                    drag="x"
+                    dragConstraints={{ left: 0, right: 0 }}
+                    dragElastic={0.25}
+                    onDragStart={() => setIsDragging(true)}
+                    onDragEnd={handleDragEnd}
                     initial={{ opacity: 0, scale: 0.98 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 1.02 }}
                     transition={{ duration: 0.5, ease: 'easeOut' }}
                     onClick={() => handleBannerClick(banner.linkUrl)}
-                    className="absolute inset-0 cursor-pointer overflow-hidden group select-none"
+                    className="absolute inset-0 cursor-grab active:cursor-grabbing overflow-hidden group select-none touch-pan-y"
                   >
                     <img
                       src={banner.imageUrl}
                       alt={`${banner.title} - HodaHub Promo`}
-                      className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-700"
+                      className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-700 pointer-events-none"
                     />
 
                     {/* Gradient Overlay & Branding Text */}
@@ -172,11 +194,16 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectProduct, onNavigate 
                 return (
                   <motion.div
                     key={banner.id}
+                    drag="x"
+                    dragConstraints={{ left: 0, right: 0 }}
+                    dragElastic={0.25}
+                    onDragStart={() => setIsDragging(true)}
+                    onDragEnd={handleDragEnd}
                     initial={{ opacity: 0, x: 50 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -50 }}
                     transition={{ duration: 0.5, ease: 'easeOut' }}
-                    className={`absolute inset-0 bg-gradient-to-r ${banner.bgGradient} flex items-center justify-between p-4 sm:p-12 text-white`}
+                    className={`absolute inset-0 bg-gradient-to-r ${banner.bgGradient} flex items-center justify-between p-4 sm:p-12 text-white cursor-grab active:cursor-grabbing select-none touch-pan-y`}
                   >
                     <div className="max-w-xl z-10">
                       <div className="inline-flex items-center gap-2 bg-white/15 backdrop-blur-md px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-mono font-bold tracking-wider mb-3 sm:mb-4 border border-white/20">
@@ -282,148 +309,147 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectProduct, onNavigate 
         ))}
       </div>
 
-      {/* 4. DEALS OF THE DAY RAIL (With live countdown timer) */}
+      {/* 4. FEATURED PRODUCTS (Live catalog items) */}
       <ProductStrip
-        title="Deals of the Day"
-        subtitle="Refreshes every 24 hours. Handpicked lowest price drops."
-        hasTimer
-        products={dealsOfTheDay}
+        title="Featured Products"
+        subtitle="100% Genuine, verified authentic products directly on HodaHub."
+        products={allProducts}
         onSelectProduct={onSelectProduct}
-        onViewAll={() => onNavigate('plp', { tag: 'Deal of the Day' })}
-        bannerAd={{
-          tag: 'MEGA DEAL FEST',
-          title: 'Unmatched 24H Price Crash',
-          sub: 'Extra 10% instant discount on prepaid orders.',
-          bg: 'bg-gradient-to-br from-primary-900 via-primary-700 to-indigo-800',
-        }}
+        onViewAll={() => onNavigate('plp')}
       />
 
-      {/* 5. DUAL FEATURED BANNERS (Bank and brand promos) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full min-w-0">
-        <div
-          onClick={() => onNavigate('plp', { category: 'mobiles' })}
-          className="bg-gradient-to-r from-slate-950 to-indigo-950 rounded-2xl p-4 sm:p-6 text-white cursor-pointer shadow-md hover:shadow-xl transition-shadow flex items-center justify-between overflow-hidden relative group min-w-0"
-        >
-          <div className="z-10 min-w-0 pr-2">
-            <span className="text-[11px] sm:text-xs font-mono font-bold text-amber-400 bg-amber-400/20 px-2 py-0.5 rounded">
-              FLAGSHIP SPOTLIGHT
-            </span>
-            <h3 className="text-lg sm:text-2xl font-black mt-2 leading-tight">Next-Gen Titanium Flagships</h3>
-            <p className="text-xs text-slate-300 mt-1 line-clamp-2">Starting ₹6,499/month with No Cost EMI</p>
-            <button className="mt-3 sm:mt-4 px-3.5 py-1.5 sm:px-4 sm:py-2 bg-white text-slate-950 font-bold text-xs rounded-lg group-hover:bg-primary-50 transition-colors">
-              Explore Now →
-            </button>
-          </div>
-          <img
-            src="https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=400&q=80"
-            alt="Mobiles"
-            className="w-24 h-24 sm:w-36 sm:h-36 object-contain group-hover:scale-105 transition-transform duration-300 flex-shrink-0"
-          />
-        </div>
+      {/* 4.1 DEALS OF THE DAY RAIL (Only if deals exist) */}
+      {dealsOfTheDay.length > 0 && (
+        <ProductStrip
+          title="Deals of the Day"
+          subtitle="Refreshes every 24 hours. Handpicked lowest price drops."
+          hasTimer
+          products={dealsOfTheDay}
+          onSelectProduct={onSelectProduct}
+          onViewAll={() => onNavigate('plp', { tag: 'Deal of the Day' })}
+          bannerAd={{
+            tag: 'MEGA DEAL FEST',
+            title: 'Unmatched 24H Price Crash',
+            sub: 'Extra 10% instant discount on prepaid orders.',
+            bg: 'bg-gradient-to-br from-primary-900 via-primary-700 to-indigo-800',
+          }}
+        />
+      )}
 
-        <div
-          onClick={() => onNavigate('plp', { category: 'appliances' })}
-          className="bg-gradient-to-r from-slate-900 to-primary-950 rounded-2xl p-4 sm:p-6 text-white cursor-pointer shadow-md hover:shadow-xl transition-shadow flex items-center justify-between overflow-hidden relative group min-w-0"
-        >
-          <div className="z-10 min-w-0 pr-2">
-            <span className="text-[11px] sm:text-xs font-mono font-bold text-emerald-400 bg-emerald-400/20 px-2 py-0.5 rounded">
-              HOME APPLIANCE CARNIVAL
-            </span>
-            <h3 className="text-lg sm:text-2xl font-black mt-2 leading-tight">4K OLED & Smart Living</h3>
-            <p className="text-xs text-slate-300 mt-1 line-clamp-2">Up to 40% Off + ₹6,000 Exchange Bonus</p>
-            <button className="mt-3 sm:mt-4 px-3.5 py-1.5 sm:px-4 sm:py-2 bg-white text-slate-950 font-bold text-xs rounded-lg group-hover:bg-primary-50 transition-colors">
-              Explore Deals →
-            </button>
-          </div>
-          <img
-            src="https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?w=400&q=80"
-            alt="Appliances"
-            className="w-24 h-24 sm:w-36 sm:h-36 object-contain group-hover:scale-105 transition-transform duration-300 flex-shrink-0"
-          />
-        </div>
-      </div>
+      {/* 5. TOP PICKS (Only if items exist) */}
+      {topPicks.length > 0 && (
+        <ProductStrip
+          title="Top Picks for You"
+          subtitle="Curated based on trending demand and customer reviews."
+          products={topPicks}
+          onSelectProduct={onSelectProduct}
+          onViewAll={() => onNavigate('plp')}
+        />
+      )}
 
-      {/* 6. TOP PICKS IN SMARTPHONES & TECH */}
-      <ProductStrip
-        title="Top Picks for You"
-        subtitle="Curated based on trending demand and HodaAssured customer reviews."
-        products={topPicks}
-        onSelectProduct={onSelectProduct}
-        onViewAll={() => onNavigate('plp', { category: 'mobiles' })}
-      />
+      {/* 6. DYNAMIC CATEGORY SHOWCASE (Only categories that actually have products in the catalog) */}
+      {(() => {
+        const categoriesWithProducts = activeCategories.filter((cat) => {
+          const catSlug = (cat as any).slug || cat.id;
+          return allProducts.some(
+            (p: Product) =>
+              p.category?.toLowerCase() === catSlug?.toLowerCase() ||
+              p.category?.toLowerCase() === cat.id?.toLowerCase() ||
+              (p as any).categoryId === cat.id
+          );
+        });
 
-      {/* 7. HIGH-DENSITY CATEGORY 4-GRID SHOWCASE */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {CATEGORIES.slice(0, 4).map((cat) => {
-          const catProducts = PRODUCTS.filter((p: Product) => p.category === cat.id).slice(0, 4);
-          return (
-            <div
-              key={cat.id}
-              className="bg-white rounded-xl border border-slate-200/90 p-4 shadow-sm flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-extrabold text-sm text-slate-900 line-clamp-1">{cat.name}</h3>
+        if (categoriesWithProducts.length === 0) return null;
+
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {categoriesWithProducts.slice(0, 4).map((cat) => {
+              const catSlug = (cat as any).slug || cat.id;
+              const catProducts = allProducts
+                .filter(
+                  (p: Product) =>
+                    p.category?.toLowerCase() === catSlug?.toLowerCase() ||
+                    p.category?.toLowerCase() === cat.id?.toLowerCase() ||
+                    (p as any).categoryId === cat.id
+                )
+                .slice(0, 4);
+
+              return (
+                <div
+                  key={cat.id}
+                  className="bg-white rounded-xl border border-slate-200/90 p-4 shadow-sm flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-extrabold text-sm text-slate-900 line-clamp-1">{cat.name}</h3>
+                      <button
+                        onClick={() => onNavigate('plp', { category: catSlug })}
+                        className="text-xs text-primary-600 font-bold hover:underline"
+                      >
+                        View All
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {catProducts.map((item: Product) => (
+                        <div
+                          key={item.id}
+                          onClick={() => onSelectProduct(item)}
+                          className="p-2 border border-slate-100 rounded-lg hover:border-primary-300 cursor-pointer transition-all group bg-slate-50/50"
+                        >
+                          <div className="w-full aspect-square flex items-center justify-center p-1 mb-1">
+                            <img
+                              src={item.images[0]}
+                              alt={item.title}
+                              className="w-full h-full object-contain mix-blend-multiply group-hover:scale-105 transition-transform"
+                            />
+                          </div>
+                          <p className="text-[11px] font-semibold text-slate-800 line-clamp-1">{item.title}</p>
+                          {item.discountPercent > 0 && (
+                            <p className="text-[10px] text-amber-700 font-bold bg-amber-50 px-1 rounded inline-block mt-0.5">
+                              {item.discountPercent}% Off
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <button
-                    onClick={() => onNavigate('plp', { category: cat.id })}
-                    className="text-xs text-primary-600 font-bold hover:underline"
+                    onClick={() => onNavigate('plp', { category: catSlug })}
+                    className="w-full mt-4 py-2 bg-slate-50 hover:bg-primary-50 text-slate-700 hover:text-primary-700 rounded-lg font-bold text-xs transition-colors border border-slate-200 flex items-center justify-center gap-1"
                   >
-                    View All
+                    <span>Browse {cat.name}</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
-                <div className="grid grid-cols-2 gap-2">
-                  {catProducts.map((item: Product) => (
-                    <div
-                      key={item.id}
-                      onClick={() => onSelectProduct(item)}
-                      className="p-2 border border-slate-100 rounded-lg hover:border-primary-300 cursor-pointer transition-all group bg-slate-50/50"
-                    >
-                      <div className="w-full aspect-square flex items-center justify-center p-1 mb-1">
-                        <img
-                          src={item.images[0]}
-                          alt={item.title}
-                          className="w-full h-full object-contain mix-blend-multiply group-hover:scale-105 transition-transform"
-                        />
-                      </div>
-                      <p className="text-[11px] font-semibold text-slate-800 line-clamp-1">{item.title}</p>
-                      <p className="text-[10px] text-amber-700 font-bold bg-amber-50 px-1 rounded inline-block mt-0.5">
-                        {item.discountPercent}% Off
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
+      {/* 7. TRENDING ELECTRONICS RAIL */}
+      {trendingElectronics.length > 0 && (
+        <ProductStrip
+          title="Trending in Electronics & Audio"
+          subtitle="Top technology and high performance gear."
+          products={trendingElectronics}
+          onSelectProduct={onSelectProduct}
+          onViewAll={() => onNavigate('plp', { category: 'electronics' })}
+        />
+      )}
 
-              <button
-                onClick={() => onNavigate('plp', { category: cat.id })}
-                className="w-full mt-4 py-2 bg-slate-50 hover:bg-primary-50 text-slate-700 hover:text-primary-700 rounded-lg font-bold text-xs transition-colors border border-slate-200 flex items-center justify-center gap-1"
-              >
-                <span>Browse {cat.name}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* 8. TRENDING AUDIO & GADGETS */}
-      <ProductStrip
-        title="Trending in Electronics & Audio"
-        subtitle="Industry-leading noise cancellation, wireless gear, and high-performance PC components."
-        products={trendingElectronics}
-        onSelectProduct={onSelectProduct}
-        onViewAll={() => onNavigate('plp', { category: 'electronics' })}
-      />
-
-      {/* 9. FASHION & HOME APPLIANCES RAIL */}
-      <ProductStrip
-        title="Fashion, Footwear & Modern Living"
-        subtitle="100% Original sneakers, designer apparel, and top kitchen essentials."
-        products={fashionAndLifestyle}
-        onSelectProduct={onSelectProduct}
-        onViewAll={() => onNavigate('plp', { category: 'fashion' })}
-      />
+      {/* 8. FASHION & LIFESTYLE RAIL */}
+      {fashionAndLifestyle.length > 0 && (
+        <ProductStrip
+          title="Fashion, Footwear & Modern Living"
+          subtitle="100% Original products and lifestyle essentials."
+          products={fashionAndLifestyle}
+          onSelectProduct={onSelectProduct}
+          onViewAll={() => onNavigate('plp')}
+        />
+      )}
     </div>
   );
 };

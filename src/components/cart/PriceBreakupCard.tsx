@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Tag, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useCartStore } from '../../store/useCartStore';
 import { formatPrice } from '../../lib/utils';
+import { adminApi, AdminCoupon } from '../../lib/adminApi';
 
 interface PriceBreakupCardProps {
   onCheckout?: () => void;
@@ -19,6 +20,7 @@ export const PriceBreakupCard: React.FC<PriceBreakupCardProps> = ({
     type: 'success' | 'error' | null;
     message: string;
   }>({ type: null, message: '' });
+  const [availableCoupons, setAvailableCoupons] = useState<AdminCoupon[]>([]);
 
   const totalCount = useCartStore((state) => state.getTotalCount());
   const totalMRP = useCartStore((state) => state.getTotalMRP());
@@ -31,11 +33,21 @@ export const PriceBreakupCard: React.FC<PriceBreakupCardProps> = ({
   const applyPromo = useCartStore((state) => state.applyPromo);
   const removePromo = useCartStore((state) => state.removePromo);
 
-  const handleApplyCode = (e: React.FormEvent) => {
+  useEffect(() => {
+    const loadCoupons = async () => {
+      try {
+        const list = await adminApi.getCoupons();
+        setAvailableCoupons(list || []);
+      } catch (_) {}
+    };
+    loadCoupons();
+  }, []);
+
+  const handleApplyCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!promoInput.trim()) return;
 
-    const res = applyPromo(promoInput);
+    const res = await applyPromo(promoInput);
     if (res.success) {
       setPromoFeedback({ type: 'success', message: res.message });
       setPromoInput('');
@@ -44,8 +56,8 @@ export const PriceBreakupCard: React.FC<PriceBreakupCardProps> = ({
     }
   };
 
-  const handleQuickPromo = (code: string) => {
-    const res = applyPromo(code);
+  const handleQuickPromo = async (code: string) => {
+    const res = await applyPromo(code);
     if (res.success) {
       setPromoFeedback({ type: 'success', message: res.message });
     } else {
@@ -141,24 +153,22 @@ export const PriceBreakupCard: React.FC<PriceBreakupCardProps> = ({
               </button>
             </form>
 
-            {/* Quick coupon chips */}
-            <div className="mt-2 flex items-center gap-2 flex-wrap text-[11px]">
-              <span className="text-slate-400">Try:</span>
-              <button
-                type="button"
-                onClick={() => handleQuickPromo('HODA500')}
-                className="bg-primary-50 hover:bg-primary-100 text-primary-700 px-2 py-0.5 rounded font-mono font-bold transition-colors"
-              >
-                HODA500 (₹500 off)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickPromo('FESTIVE10')}
-                className="bg-amber-50 hover:bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-mono font-bold transition-colors"
-              >
-                FESTIVE10 (10% off)
-              </button>
-            </div>
+            {/* Dynamic available coupon chips */}
+            {availableCoupons.length > 0 && (
+              <div className="mt-2 flex items-center gap-2 flex-wrap text-[11px]">
+                <span className="text-slate-400">Available:</span>
+                {availableCoupons.slice(0, 3).map((cpn) => (
+                  <button
+                    key={cpn._id || cpn.code}
+                    type="button"
+                    onClick={() => handleQuickPromo(cpn.code)}
+                    className="bg-primary-50 hover:bg-primary-100 text-primary-700 px-2 py-0.5 rounded font-mono font-bold transition-colors"
+                  >
+                    {cpn.code} ({cpn.discountType === 'percentage' ? `${cpn.discountAmount}% off` : `₹${cpn.discountAmount} off`})
+                  </button>
+                ))}
+              </div>
+            )}
 
             {promoFeedback.message && (
               <p

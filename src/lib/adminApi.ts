@@ -184,135 +184,11 @@ export interface BackendHealth {
   timestamp: string;
 }
 
-// In-memory fallback mock dataset
-const mockOrders: AdminOrder[] = [
-  {
-    _id: 'ord-supa-001',
-    orderId: 'HODA-ORD-2026-908123',
-    user: null,
-    isGuestOrder: true,
-    guestInfo: {
-      name: 'Priya Sharma',
-      phone: '+91 98451 23456',
-      address: {
-        line1: 'Flat 304, Palm Grove Heights',
-        line2: 'Koramangala 4th Block',
-        city: 'Bengaluru',
-        state: 'Karnataka',
-        pincode: '560034',
-      },
-    },
-    items: [
-      {
-        product: 'prod-001',
-        title: 'Sony WH-1000XM5 Wireless Headphones',
-        sku: 'HODA-SNY-XM5-BLK',
-        price: 28990,
-        mrp: 34990,
-        quantity: 1,
-        image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80',
-      },
-    ],
-    shippingAddress: {
-      name: 'Priya Sharma',
-      phone: '+91 98451 23456',
-      pincode: '560034',
-      locality: 'Koramangala 4th Block',
-      addressLine: 'Flat 304, Palm Grove Heights',
-      city: 'Bengaluru',
-      state: 'Karnataka',
-    },
-    paymentMethod: 'UPI',
-    paymentGateway: 'razorpay',
-    paymentStatus: 'completed',
-    orderStatus: 'delivery_date_pending',
-    pricing: {
-      subtotal: 28990,
-      discount: 6000,
-      couponDiscount: 500,
-      couponCode: 'HODA500',
-      deliveryFee: 0,
-      tax: 0,
-      total: 28490,
-    },
-    estimatedDeliveryDate: null,
-    awbNumber: 'HODA-DLV-882391021',
-    courierName: 'Delhivery',
-    shipmentStatus: 'manifested',
-    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-  },
-];
-
-let mockCoupons: AdminCoupon[] = [
-  {
-    _id: 'cpn-001',
-    code: 'HODA500',
-    discountType: 'flat',
-    discountAmount: 500,
-    minOrderValue: 1999,
-    validUntil: new Date(Date.now() + 86400000 * 180).toISOString(),
-    isActive: true,
-    usageLimit: 5000,
-    usedCount: 214,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    _id: 'cpn-002',
-    code: 'FESTIVE10',
-    discountType: 'percentage',
-    discountAmount: 10,
-    minOrderValue: 999,
-    maxDiscount: 1500,
-    validUntil: new Date(Date.now() + 86400000 * 90).toISOString(),
-    isActive: true,
-    usageLimit: 10000,
-    usedCount: 582,
-    createdAt: new Date().toISOString(),
-  },
-];
-
-let mockReviews: AdminReview[] = [
-  {
-    _id: 'rev-001',
-    user: {
-      _id: 'u-101',
-      name: 'Rohit Verma',
-    },
-    product: {
-      _id: 'a1000000-0000-0000-0000-000000000001',
-      title: 'Sony WH-1000XM5 Wireless Headphones',
-      sku: 'HODA-SNY-XM5-BLK',
-      image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80',
-    },
-    productTitle: 'Sony WH-1000XM5 Wireless Headphones',
-    productImage: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80',
-    title: 'Outstanding Sound Quality & ANC',
-    userName: 'Rohit Verma',
-    userEmail: 'rohit.verma@example.com',
-    rating: 5,
-    comment: 'Exceptional active noise cancellation and crystal-clear calls. HodaHub delivered in pristine condition!',
-    verifiedPurchase: true,
-    status: 'approved',
-    createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-  },
-];
-
-let mockCategories: AdminCategory[] = CATEGORIES.map((c, idx) => ({
-  id: c.id,
-  name: c.name,
-  slug: c.id,
-  parentCategoryId: null,
-  parentCategoryName: null,
-  imageUrl: c.featuredImage,
-  productCount: PRODUCTS.filter((p) => p.category === c.id).length,
-  sortOrder: idx + 1,
-  badge: c.badge || '',
-  icon: c.icon || 'Folder',
-  subcategories: c.subcategories || [],
-  createdAt: new Date().toISOString(),
-}));
-
+// In-memory fallback mock dataset (empty by default, loaded from database or local storage)
+const mockOrders: AdminOrder[] = [];
+let mockCoupons: AdminCoupon[] = [];
+let mockReviews: AdminReview[] = [];
+let mockCategories: AdminCategory[] = [];
 let mockBanners: AdminBanner[] = [
   {
     id: 'bb000000-0000-0000-0000-000000000001',
@@ -504,7 +380,7 @@ export const adminApi = {
     try {
       let query = supabase
         .from('products')
-        .select('*, product_images(url), categories(name, slug)')
+        .select('*, product_images(url, sort_order), categories(id, name, slug)')
         .order('created_at', { ascending: false });
 
       if (params.search) {
@@ -516,30 +392,62 @@ export const adminApi = {
 
       const { data, error } = await query;
 
-      if (!error && data && data.length > 0) {
-        return data.map((p: any) => ({
-          id: p.id,
-          sku: p.sku || `HODA-${p.id.slice(0, 6)}`,
-          title: p.title,
-          brand: p.brand || 'HodaHub',
-          category: p.categories?.slug || 'electronics',
-          subcategory: 'General',
-          price: Number(p.price),
-          originalPrice: Number(p.mrp),
-          discountPercent: Math.round(((p.mrp - p.price) / p.mrp) * 100),
-          rating: Number(p.rating_avg) || 4.8,
-          ratingCount: p.rating_count || 10,
-          reviewCount: p.rating_count || 10,
-          inStock: p.stock > 0,
-          stockCount: p.stock,
-          isAssured: true,
-          images: p.product_images?.map((img: any) => img.url) || ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80'],
-          highlights: ['100% Genuine HodaAssured Item', 'Official Brand Warranty'],
-          specs: {},
-          bankOffers: [],
-          warranty: '1 Year Brand Warranty',
-          deliveryDays: 2,
-        })) as Product[];
+      if (!error && data) {
+        const dbProducts: Product[] = data.map((p: any) => {
+          const sortedImages = p.product_images && p.product_images.length > 0
+            ? [...p.product_images].sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map((img: any) => img.url)
+            : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80'];
+
+          const catSlug = p.categories?.slug || (p.categories?.name ? p.categories.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'General');
+
+          return {
+            id: p.id,
+            sku: p.sku || `HODA-${p.id.slice(0, 6)}`,
+            title: p.title,
+            description: p.description || '',
+            brand: p.brand || 'HodaHub',
+            category: catSlug,
+            categoryId: p.category_id || p.categories?.id,
+            categoryName: p.categories?.name || 'General',
+            subcategory: 'General',
+            price: Number(p.price),
+            originalPrice: Number(p.mrp || p.price),
+            discountPercent: Number(p.mrp) > Number(p.price) ? Math.round(((Number(p.mrp) - Number(p.price)) / Number(p.mrp)) * 100) : 0,
+            rating: Number(p.rating_avg) || 4.8,
+            ratingCount: p.rating_count || 10,
+            reviewCount: p.rating_count || 10,
+            inStock: Number(p.stock) > 0,
+            stockCount: Number(p.stock),
+            isAssured: true,
+            images: sortedImages,
+            highlights: ['100% Genuine HodaAssured Item', 'Official Brand Warranty'],
+            specs: {},
+            bankOffers: [],
+            warranty: '1 Year Brand Warranty',
+            deliveryDays: 2,
+          };
+        });
+
+        // Sync into PRODUCTS cache
+        dbProducts.forEach((dbP) => {
+          const idx = PRODUCTS.findIndex((p) => p.id === dbP.id || p.sku === dbP.sku);
+          if (idx !== -1) {
+            PRODUCTS[idx] = { ...PRODUCTS[idx], ...dbP };
+          } else {
+            PRODUCTS.unshift(dbP);
+          }
+        });
+
+        let result = dbProducts;
+        if (params.category && params.category !== 'ALL' && params.category !== 'All') {
+          const catFilter = params.category.toLowerCase();
+          result = result.filter((p) =>
+            p.category?.toLowerCase() === catFilter ||
+            (p as any).categoryId === params.category ||
+            (p as any).categoryName?.toLowerCase() === catFilter
+          );
+        }
+        return result;
       }
     } catch (err) {
       console.warn('Postgres getProducts notice:', err);
@@ -547,67 +455,191 @@ export const adminApi = {
 
     // Local fallback
     let list = [...PRODUCTS];
+    if (params.category && params.category !== 'ALL' && params.category !== 'All') {
+      const catFilter = params.category.toLowerCase();
+      list = list.filter((p) =>
+        p.category?.toLowerCase() === catFilter ||
+        (p as any).categoryId === params.category ||
+        (p as any).categoryName?.toLowerCase() === catFilter
+      );
+    }
     if (params.search) {
       const q = params.search.toLowerCase();
-      list = list.filter((p) => p.title.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q));
+      list = list.filter((p) => p.title.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q));
     }
     return list;
   },
 
-  async createProduct(data: any) {
+  async createProduct(data: any): Promise<Product> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    let categoryUuid: string | null = null;
+    let categorySlug = data.category || 'General';
+    let categoryName = 'General';
+
+    // 1. Resolve category UUID and slug/name
+    if (data.category) {
+      if (isUUID(data.category)) {
+        categoryUuid = data.category;
+      }
+      try {
+        const { data: catRows } = await supabase.from('categories').select('id, slug, name');
+        if (catRows && catRows.length > 0) {
+          const match = catRows.find(
+            (c: any) =>
+              c.id === data.category ||
+              c.slug === data.category ||
+              c.name.toLowerCase() === String(data.category).toLowerCase()
+          );
+          if (match) {
+            categoryUuid = match.id;
+            categorySlug = match.slug;
+            categoryName = match.name;
+          }
+        }
+      } catch (catErr) {
+        console.warn('Category resolution error:', catErr);
+      }
+      if (!categoryUuid && mockCategories.length > 0) {
+        const match = mockCategories.find(
+          (c) =>
+            c.id === data.category ||
+            c.slug === data.category ||
+            c.name.toLowerCase() === String(data.category).toLowerCase()
+        );
+        if (match) {
+          categorySlug = match.slug;
+          categoryName = match.name;
+          if (isUUID(match.id)) {
+            categoryUuid = match.id;
+          }
+        }
+      }
+    }
+
+    const numPrice = Number(data.price) || 999;
+    const numMrp = Number(data.originalPrice || data.mrp || Math.round(numPrice * 1.25));
+    const generatedSku = data.sku?.trim() || `HODA-${(data.brand || 'HUB').slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+    const finalImages = Array.isArray(data.images) && data.images.length > 0
+      ? data.images
+      : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80'];
+
     try {
+      const generatedSlug = (data.title || 'new-hodahub-product')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '') + '-' + Date.now();
+
       const { data: newProd, error } = await supabase
         .from('products')
         .insert({
           title: data.title || 'New HodaHub Product',
-          slug: (data.title || 'new-hodahub-product').toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now(),
-          price: Number(data.price) || 999,
-          mrp: Number(data.originalPrice || data.mrp || (data.price * 1.2)),
+          slug: generatedSlug,
+          description: data.description || null,
+          price: numPrice,
+          mrp: numMrp,
+          category_id: categoryUuid,
           brand: data.brand || 'HodaHub',
-          stock: Number(data.stockCount || 20),
-          sku: data.sku || `HODA-${Date.now().toString().slice(-6)}`,
+          stock: Number(data.stockCount !== undefined ? data.stockCount : 20),
+          sku: generatedSku,
           is_active: true,
         })
-        .select()
+        .select('*, categories(id, name, slug)')
         .single();
 
       if (!error && newProd) {
-        if (data.images && data.images.length > 0) {
-          const imgInserts = data.images.map((url: string, index: number) => ({
-            product_id: newProd.id,
-            url,
-            sort_order: index,
-          }));
-          await supabase.from('product_images').insert(imgInserts);
+        if (finalImages.length > 0) {
+          try {
+            const imgInserts = finalImages.map((url: string, index: number) => ({
+              product_id: newProd.id,
+              url,
+              sort_order: index,
+            }));
+            await supabase.from('product_images').insert(imgInserts);
+          } catch (imgErr) {
+            console.warn('Failed to insert product images:', imgErr);
+          }
         }
-        return newProd;
+
+        const formattedProduct: Product = {
+          id: newProd.id,
+          sku: newProd.sku || generatedSku,
+          title: newProd.title,
+          description: newProd.description || data.description || '',
+          brand: newProd.brand || data.brand || 'HodaHub',
+          category: newProd.categories?.slug || categorySlug,
+          categoryId: newProd.category_id || categoryUuid || undefined,
+          categoryName: newProd.categories?.name || categoryName,
+          subcategory: 'General',
+          price: Number(newProd.price),
+          originalPrice: Number(newProd.mrp),
+          discountPercent: Math.round(((Number(newProd.mrp) - Number(newProd.price)) / Number(newProd.mrp)) * 100),
+          rating: Number(newProd.rating_avg) || 4.8,
+          ratingCount: newProd.rating_count || 1,
+          reviewCount: newProd.rating_count || 1,
+          inStock: Number(newProd.stock) > 0,
+          stockCount: Number(newProd.stock),
+          isAssured: true,
+          images: finalImages,
+          highlights: data.highlights && data.highlights.length > 0 ? data.highlights : ['100% Genuine HodaAssured Item', 'Official Brand Warranty'],
+          specs: data.specs || {},
+          colors: data.colors,
+          sizes: data.sizes,
+          availableBoxOptionIds: data.availableBoxOptionIds || ['box-opt-simple', 'box-opt-premium'],
+          bankOffers: [],
+          warranty: '1 Year Brand Warranty',
+          deliveryDays: 2,
+        };
+
+        const existingIdx = PRODUCTS.findIndex((p) => p.id === formattedProduct.id || p.sku === formattedProduct.sku);
+        if (existingIdx !== -1) {
+          PRODUCTS[existingIdx] = formattedProduct;
+        } else {
+          PRODUCTS.unshift(formattedProduct);
+        }
+
+        return formattedProduct;
+      } else if (error) {
+        console.warn('Supabase createProduct insert error:', error.message);
       }
     } catch (err) {
       console.warn('Postgres createProduct notice:', err);
     }
 
-    const fallback = {
+    const fallback: Product = {
       id: `hoda-prod-${Date.now().toString().slice(-4)}`,
-      _id: `mock-id-${Date.now()}`,
+      sku: generatedSku,
       title: data.title || 'New HodaHub Product',
-      brand: 'HodaHub',
-      category: data.category || 'electronics',
-      price: Number(data.price) || 999,
-      originalPrice: Number(data.price * 1.2),
-      discountPercent: 16,
+      description: data.description || '',
+      brand: data.brand || 'HodaHub',
+      category: categorySlug,
+      categoryId: categoryUuid || undefined,
+      categoryName: categoryName,
+      subcategory: 'General',
+      price: numPrice,
+      originalPrice: numMrp,
+      discountPercent: Math.round(((numMrp - numPrice) / numMrp) * 100),
       rating: 4.8,
       ratingCount: 1,
-      inStock: true,
-      stockCount: 25,
-      sku: data.sku || `HODA-NEW-${Date.now().toString().slice(-6)}`,
-      images: data.images || ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80'],
-      highlights: ['100% Genuine HodaAssured Item', 'Official Manufacturer Warranty'],
+      reviewCount: 1,
+      inStock: Number(data.stockCount || 20) > 0,
+      stockCount: Number(data.stockCount || 20),
+      isAssured: true,
+      images: finalImages,
+      highlights: data.highlights && data.highlights.length > 0 ? data.highlights : ['100% Genuine HodaAssured Item', 'Official Manufacturer Warranty'],
+      specs: data.specs || {},
+      colors: data.colors,
+      sizes: data.sizes,
+      availableBoxOptionIds: data.availableBoxOptionIds || ['box-opt-simple', 'box-opt-premium'],
+      bankOffers: [],
+      warranty: '1 Year Brand Warranty',
+      deliveryDays: 2,
     };
-    PRODUCTS.unshift(fallback as any);
+    PRODUCTS.unshift(fallback);
     return fallback;
   },
 
   async updateProduct(id: string, updates: Record<string, any>) {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     try {
       const payload: any = {};
       if (updates.title !== undefined) payload.title = updates.title;
@@ -621,6 +653,20 @@ export const adminApi = {
       }
       if (updates.sku !== undefined) payload.sku = updates.sku;
       if (updates.description !== undefined) payload.description = updates.description;
+
+      if (updates.category !== undefined) {
+        if (isUUID(updates.category)) {
+          payload.category_id = updates.category;
+        } else {
+          try {
+            const { data: catRows } = await supabase.from('categories').select('id, slug, name');
+            const match = catRows?.find((c: any) => c.slug === updates.category || c.name.toLowerCase() === String(updates.category).toLowerCase());
+            if (match) payload.category_id = match.id;
+          } catch {
+            // ignore
+          }
+        }
+      }
 
       // Update product in Supabase database
       const { error: prodErr } = await supabase.from('products').update(payload).eq('id', id);
@@ -687,7 +733,7 @@ export const adminApi = {
         .order('sort_order', { ascending: true })
         .order('name', { ascending: true });
 
-      if (!error && dbCategories && dbCategories.length > 0) {
+      if (!error && Array.isArray(dbCategories)) {
         // Fetch product counts from Supabase products
         const { data: productRows } = await supabase
           .from('products')
@@ -701,7 +747,7 @@ export const adminApi = {
         const categoriesList: AdminCategory[] = dbCategories.map((c: any) => {
           const matchingProductsCount = productRows
             ? productRows.filter((p: any) => p.category_id === c.id).length
-            : PRODUCTS.filter((p) => p.category === c.slug || p.category === c.id).length;
+            : PRODUCTS.filter((p) => p.category === c.slug || p.category === c.id || (p as any).categoryId === c.id).length;
 
           return {
             id: c.id,
@@ -727,7 +773,7 @@ export const adminApi = {
     }
 
     mockCategories.forEach((c) => {
-      c.productCount = PRODUCTS.filter((p) => p.category === c.slug || p.category === c.id).length;
+      c.productCount = PRODUCTS.filter((p) => p.category === c.slug || p.category === c.id || (p as any).categoryId === c.id).length;
     });
     return mockCategories;
   },
@@ -848,9 +894,9 @@ export const adminApi = {
     throw new Error('Category not found');
   },
 
-  async deleteCategory(id: string): Promise<{ success: boolean; productCount?: number; message?: string }> {
+  async deleteCategory(id: string, force = false): Promise<{ success: boolean; productCount?: number; message?: string }> {
     const cat = mockCategories.find((c) => c.id === id || c.slug === id);
-    let productCount = PRODUCTS.filter((p) => p.category === id || (cat && p.category === cat.slug)).length;
+    let productCount = PRODUCTS.filter((p) => p.category === id || (cat && p.category === cat.slug) || (p as any).categoryId === id).length;
 
     try {
       const { count, error } = await supabase
@@ -858,14 +904,14 @@ export const adminApi = {
         .select('id', { count: 'exact', head: true })
         .eq('category_id', id);
 
-      if (!error && count !== null && count > 0) {
+      if (!error && count !== null) {
         productCount = Math.max(productCount, count);
       }
     } catch (err) {
       console.warn('Postgres check category products count notice:', err);
     }
 
-    if (productCount > 0) {
+    if (productCount > 0 && !force) {
       return {
         success: false,
         productCount,
@@ -874,6 +920,8 @@ export const adminApi = {
     }
 
     try {
+      // Unlink products in this category so foreign key doesn't fail
+      await supabase.from('products').update({ category_id: null }).eq('category_id', id);
       await supabase.from('categories').delete().eq('id', id);
     } catch (err) {
       console.warn('Postgres deleteCategory error:', err);
@@ -1111,10 +1159,16 @@ export const adminApi = {
 
   // 4. COUPONS
   async getCoupons(): Promise<AdminCoupon[]> {
+    let combinedCoupons: AdminCoupon[] = [];
+
     try {
-      const { data, error } = await supabase.from('coupons').select('*').order('created_at', { ascending: false });
-      if (!error && data && data.length > 0) {
-        return data.map((c: any) => ({
+      const { data, error } = await supabase
+        .from('coupons')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        combinedCoupons = data.map((c: any) => ({
           _id: c.id,
           code: c.code,
           discountType: c.discount_type,
@@ -1132,42 +1186,22 @@ export const adminApi = {
       console.warn('Postgres getCoupons notice:', err);
     }
 
-    return [
-      {
-        _id: 'cpn-1',
-        code: 'HODA500',
-        discountType: 'flat',
-        discountAmount: 500,
-        minOrderValue: 1999,
-        validUntil: '2026-12-31T23:59:59.000Z',
-        isActive: true,
-        usageLimit: 5000,
-        usedCount: 234,
-      },
-      {
-        _id: 'cpn-2',
-        code: 'FESTIVE10',
-        discountType: 'percentage',
-        discountAmount: 10,
-        minOrderValue: 999,
-        maxDiscount: 1500,
-        validUntil: '2026-11-15T23:59:59.000Z',
-        isActive: true,
-        usageLimit: 10000,
-        usedCount: 1420,
-      },
-      {
-        _id: 'cpn-3',
-        code: 'WELCOME100',
-        discountType: 'flat',
-        discountAmount: 100,
-        minOrderValue: 499,
-        validUntil: '2027-01-01T00:00:00.000Z',
-        isActive: true,
-        usageLimit: 20000,
-        usedCount: 890,
-      },
-    ];
+    // Merge with any local storage coupons that haven't synced yet or saved locally
+    try {
+      const localStored = JSON.parse(localStorage.getItem('hodahub_coupons') || '[]');
+      if (Array.isArray(localStored)) {
+        const existingCodes = new Set(combinedCoupons.map((c) => c.code.toUpperCase()));
+        const existingIds = new Set(combinedCoupons.map((c) => c._id));
+        localStored.forEach((lc: any) => {
+          if (!existingCodes.has(lc.code?.toUpperCase()) && !existingIds.has(lc._id)) {
+            combinedCoupons.push(lc);
+          }
+        });
+      }
+    } catch (_) {}
+
+    mockCoupons = combinedCoupons;
+    return combinedCoupons;
   },
 
   async createCoupon(data: {
@@ -1178,50 +1212,81 @@ export const adminApi = {
     maxDiscount?: number;
     validUntil: string;
     usageLimit?: number;
-  }) {
+  }): Promise<AdminCoupon> {
+    const formattedCode = data.code.toUpperCase().trim();
+    const newCoupon: AdminCoupon = {
+      _id: `cpn-${Date.now()}`,
+      code: formattedCode,
+      discountType: data.discountType,
+      discountAmount: Number(data.discountAmount),
+      minOrderValue: Number(data.minOrderValue || 0),
+      maxDiscount: Number(data.maxDiscount || 0),
+      validUntil: data.validUntil,
+      isActive: true,
+      usageLimit: data.usageLimit || 1000,
+      usedCount: 0,
+      createdAt: new Date().toISOString(),
+    };
+
+    // 1. Try Supabase insert
     try {
       const { data: cpn, error } = await supabase
         .from('coupons')
         .insert({
-          code: data.code.toUpperCase().trim(),
+          code: formattedCode,
           discount_type: data.discountType,
           value: data.discountAmount,
-          min_order_value: data.minOrderValue,
+          min_order_value: data.minOrderValue || 0,
           expires_at: data.validUntil,
           usage_limit: data.usageLimit || 1000,
         })
         .select()
         .single();
 
-      if (!error && cpn) return cpn;
+      if (!error && cpn) {
+        newCoupon._id = cpn.id;
+        newCoupon.createdAt = cpn.created_at;
+      } else if (error) {
+        console.warn('Supabase coupon insert notice (fallback to local storage):', error.message);
+      }
     } catch (err) {
-      console.warn('Postgres createCoupon notice:', err);
+      console.warn('Supabase coupon insert exception:', err);
     }
 
-    return {
-      _id: `cpn-${Date.now()}`,
-      isActive: true,
-      usedCount: 0,
-      createdAt: new Date().toISOString(),
-      ...data,
-      code: data.code.toUpperCase(),
-    };
+    // 2. Always persist to localStorage so coupons never get lost
+    try {
+      const stored = JSON.parse(localStorage.getItem('hodahub_coupons') || '[]');
+      const filtered = (Array.isArray(stored) ? stored : []).filter(
+        (c: any) => c.code !== formattedCode && c._id !== newCoupon._id
+      );
+      localStorage.setItem('hodahub_coupons', JSON.stringify([newCoupon, ...filtered]));
+    } catch (_) {}
+
+    const idx = mockCoupons.findIndex((c) => c.code === formattedCode);
+    if (idx !== -1) mockCoupons[idx] = newCoupon;
+    else mockCoupons.unshift(newCoupon);
+
+    return newCoupon;
   },
 
   async deleteCoupon(id: string): Promise<boolean> {
     try {
-      const { error } = await supabase
+      await supabase
         .from('coupons')
         .delete()
         .or(`id.eq.${id},code.eq.${id}`);
-
-      if (!error) {
-        mockCoupons = mockCoupons.filter((c) => c._id !== id && c.code !== id);
-        return true;
-      }
     } catch (err) {
       console.warn('Postgres deleteCoupon notice:', err);
     }
+
+    try {
+      const stored = JSON.parse(localStorage.getItem('hodahub_coupons') || '[]');
+      if (Array.isArray(stored)) {
+        const filtered = stored.filter((c: any) => c._id !== id && c.code !== id);
+        localStorage.setItem('hodahub_coupons', JSON.stringify(filtered));
+      }
+    } catch (_) {}
+
     mockCoupons = mockCoupons.filter((c) => c._id !== id && c.code !== id);
     return true;
   },

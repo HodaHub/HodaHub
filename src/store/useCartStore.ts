@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Product, CartItem, BoxOption } from '../types';
+import { adminApi } from '../lib/adminApi';
 
 interface FlyingItemPayload {
   x: number;
@@ -46,7 +47,7 @@ interface CartStore {
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
-  applyPromo: (code: string) => { success: boolean; message: string };
+  applyPromo: (code: string) => Promise<{ success: boolean; message: string }>;
   removePromo: () => void;
   clearFlyingItem: () => void;
   
@@ -168,35 +169,49 @@ export const useCartStore = create<CartStore>((set, get) => ({
     set({ items: [], promoCode: null, promoDiscount: 0, pendingBoxes: {} });
   },
 
-  applyPromo: (code) => {
+  applyPromo: async (code) => {
     const formatted = code.trim().toUpperCase();
     const subtotal = get().getSubtotal();
 
-    if (formatted === 'HODA500' || formatted === 'HODA500') {
-      if (subtotal >= 2999) {
-        const discount = 500;
-        set({ promoCode: formatted, promoDiscount: discount });
-        return { success: true, message: '₹500 Instant Discount applied successfully!' };
-      }
-      return { success: false, message: 'Minimum cart value of ₹2,999 required for HODA500.' };
+    let coupons: any[] = [];
+    try {
+      coupons = await adminApi.getCoupons();
+    } catch (_) {
+      try {
+        coupons = JSON.parse(localStorage.getItem('hodahub_coupons') || '[]');
+      } catch (_) {}
     }
 
-    if (formatted === 'FESTIVE10') {
-      if (subtotal >= 999) {
-        const discount = Math.min(Math.round(subtotal * 0.1), 1500);
-        set({ promoCode: formatted, promoDiscount: discount });
-        return { success: true, message: `10% Discount (₹${discount}) applied successfully!` };
-      }
-      return { success: false, message: 'Minimum cart value of ₹999 required for FESTIVE10.' };
-    }
+    const match = (coupons || []).find(
+      (c: any) => c.code?.toUpperCase() === formatted && c.isActive !== false
+    );
 
-    if (formatted === 'WELCOME100') {
-      const discount = Math.min(100, subtotal);
+    if (match) {
+      if (match.validUntil && new Date(match.validUntil).getTime() < Date.now()) {
+        return { success: false, message: `Coupon "${formatted}" has expired.` };
+      }
+      if (match.minOrderValue && subtotal < match.minOrderValue) {
+        return {
+          success: false,
+          message: `Minimum cart value of ₹${match.minOrderValue.toLocaleString('en-IN')} required for ${formatted}.`,
+        };
+      }
+
+      let discount = 0;
+      if (match.discountType === 'percentage') {
+        discount = Math.round((subtotal * (match.discountAmount || match.value || 0)) / 100);
+        if (match.maxDiscount && discount > match.maxDiscount) {
+          discount = match.maxDiscount;
+        }
+      } else {
+        discount = Math.min(match.discountAmount || match.value || 0, subtotal);
+      }
+
       set({ promoCode: formatted, promoDiscount: discount });
-      return { success: true, message: 'Welcome voucher ₹100 applied!' };
+      return { success: true, message: `Coupon "${formatted}" applied! You saved ₹${discount.toLocaleString('en-IN')}` };
     }
 
-    return { success: false, message: 'Invalid coupon code. Try HODA500 or FESTIVE10.' };
+    return { success: false, message: 'Invalid or inactive coupon code.' };
   },
 
   removePromo: () => {

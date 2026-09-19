@@ -36,7 +36,7 @@ export const FaqPage: React.FC<{ onNavigate?: (page: string) => void }> = ({ onN
       a: 'HodaHub offers 100% Free Express Delivery on all orders with a cart subtotal of ₹499 or above. For smaller orders under ₹499, a nominal flat delivery charge of ₹40 is applied to cover handling and logistics.',
     },
     {
-      q: 'How do I apply coupon codes like HODA500 or FESTIVE10?',
+      q: 'How do I apply promotional coupon codes?',
       a: 'During checkout or on the Cart page, expand the "Apply Coupon" section in the Price Details sidebar, enter your coupon code, and click Apply. The discount will instantly be deducted from your payable total.',
     },
     {

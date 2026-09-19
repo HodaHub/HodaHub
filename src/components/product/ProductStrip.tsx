@@ -59,6 +59,10 @@ export const ProductStrip: React.FC<ProductStripProps> = ({
     }
   };
 
+  if (!products || products.length === 0) {
+    return null;
+  }
+
   return (
     <section className="bg-white rounded-xl border border-slate-200/90 shadow-sm p-4 my-6">
       {/* Strip Header */}

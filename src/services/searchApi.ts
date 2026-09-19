@@ -1,4 +1,5 @@
-import { PRODUCTS } from '../data/products';
+import { Product } from '../types';
+import { useProductsStore } from '../store/useProductsStore';
 import { supabase } from '../lib/supabase';
 
 export interface SearchHit {
@@ -78,7 +79,9 @@ function localFallbackSearch(query: string, limit: number): SearchResponse {
     };
   }
 
-  const scored = PRODUCTS.map((prod) => {
+  const pool = useProductsStore.getState().products || [];
+
+  const scored = pool.map((prod) => {
     const fields = [
       { text: prod.title.toLowerCase(), weight: 10 },
       { text: prod.brand.toLowerCase(), weight: 8 },
@@ -137,7 +140,7 @@ function localFallbackSearch(query: string, limit: number): SearchResponse {
   })
     .filter(Boolean)
     .sort((a, b) => (b?.score || 0) - (a?.score || 0)) as Array<{
-    prod: (typeof PRODUCTS)[0];
+    prod: Product;
     score: number;
     matchedWords: string[];
   }>;

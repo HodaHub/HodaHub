@@ -55,6 +55,8 @@ import { Product } from './types';
 import { useFilterStore } from './store/useFilterStore';
 import { useAuthStore } from './store/useAuthStore';
 import { useAdminAuthStore } from './store/useAdminAuthStore';
+import { useCategoriesStore } from './store/useCategoriesStore';
+import { useProductsStore } from './store/useProductsStore';
 import { AdminTab } from './components/admin/AdminLayout';
 import { getProductSlug, findProductBySlug, getCategorySlug, findCategoryBySlug } from './lib/slugs';
 import { joinVisitorPresence, logPageView } from './lib/visitorTracker';
@@ -73,15 +75,17 @@ export function App() {
   const [currentPage, setCurrentPage] = useState<string>('home');
   const [adminTab, setAdminTab] = useState<AdminTab>('dashboard');
   const [pageParams, setPageParams] = useState<Record<string, any>>({});
-  const [selectedProduct, setSelectedProduct] = useState<Product>(PRODUCTS[0]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [pendingRoute, setPendingRoute] = useState<string | null>(null);
 
   const setCategoryFilter = useFilterStore((state) => state.setCategory);
   const { isAuthenticated, openAuthModal } = useAuthStore();
 
-  // 1. Realtime Presence Visitor Tracking (Joins site-visitors channel)
+  // 1. Realtime Presence Visitor Tracking & Store Pre-warming
   useEffect(() => {
     joinVisitorPresence(window.location.pathname);
+    useCategoriesStore.getState().fetchCategories();
+    useProductsStore.getState().fetchProducts();
   }, []);
 
   // 2. Historical Pageviews Tracking (Lightweight insert on route transition)
@@ -160,12 +164,11 @@ export function App() {
       if (pathname.startsWith('/category/')) {
         const catSlug = decodeURIComponent(pathname.replace(/^\/category\//, '').replace(/\/$/, ''));
         const cat = findCategoryBySlug(catSlug);
-        if (cat) {
-          setCategoryFilter(cat.id);
-          setPageParams({ category: cat.id });
-          setCurrentPage('plp');
-          return;
-        }
+        const resolvedCategory = cat ? ((cat as any).slug || cat.id) : catSlug;
+        setCategoryFilter(resolvedCategory);
+        setPageParams({ category: resolvedCategory });
+        setCurrentPage('plp');
+        return;
       }
 
       // 4. Search query route: /search?q=...
@@ -394,19 +397,32 @@ export function App() {
           )}
 
           {currentPage === 'pdp' && (
-            <motion.div
-              key={`pdp-${selectedProduct.id}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.25 }}
-            >
-              <ProductDetailPage
-                product={selectedProduct}
-                onNavigate={handleNavigate}
-                onSelectProduct={handleSelectProduct}
-              />
-            </motion.div>
+            selectedProduct ? (
+              <motion.div
+                key={`pdp-${selectedProduct.id}`}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+              >
+                <ProductDetailPage
+                  product={selectedProduct}
+                  onNavigate={handleNavigate}
+                  onSelectProduct={handleSelectProduct}
+                />
+              </motion.div>
+            ) : (
+              <div className="min-h-[50vh] flex flex-col items-center justify-center text-center p-8 bg-white rounded-2xl border border-slate-200 shadow-sm my-8">
+                <h2 className="text-xl font-bold text-slate-800 mb-2">Product Not Found</h2>
+                <p className="text-sm text-slate-500 mb-4">Please select a product from our live catalog.</p>
+                <button
+                  onClick={() => handleNavigate('home')}
+                  className="px-5 py-2 bg-primary-600 text-white rounded-xl font-bold text-sm shadow-sm hover:bg-primary-700 transition-colors"
+                >
+                  Browse Store
+                </button>
+              </div>
+            )
           )}
 
           {currentPage === 'cart' && (

@@ -15,7 +15,7 @@ interface CategoriesStoreState {
     sortOrder?: number;
   }) => Promise<AdminCategory>;
   updateCategory: (id: string, updates: Partial<AdminCategory>) => Promise<AdminCategory>;
-  deleteCategory: (id: string) => Promise<{ success: boolean; productCount?: number; message?: string }>;
+  deleteCategory: (id: string, force?: boolean) => Promise<{ success: boolean; productCount?: number; message?: string }>;
   reorderCategories: (orderedIds: string[]) => Promise<void>;
 }
 
@@ -69,8 +69,8 @@ export const useCategoriesStore = create<CategoriesStoreState>((set, get) => ({
     }
   },
 
-  deleteCategory: async (id) => {
-    const result = await adminApi.deleteCategory(id);
+  deleteCategory: async (id, force = false) => {
+    const result = await adminApi.deleteCategory(id, force);
     if (result.success) {
       set((state) => ({
         categories: state.categories.filter((c) => c.id !== id && c.slug !== id),

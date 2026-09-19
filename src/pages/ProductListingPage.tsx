@@ -5,6 +5,8 @@ import { CATEGORIES } from '../data/categories';
 import { Product, SortOption } from '../types';
 import { useFilterStore } from '../store/useFilterStore';
 import { useSearchStore } from '../store/useSearchStore';
+import { useProductsStore } from '../store/useProductsStore';
+import { useCategoriesStore } from '../store/useCategoriesStore';
 import { FilterSidebar } from '../components/filters/FilterSidebar';
 import { ProductCard } from '../components/product/ProductCard';
 import { SkeletonCard } from '../components/common/SkeletonCard';
@@ -45,6 +47,15 @@ export const ProductListingPage: React.FC<ProductListingPageProps> = ({
   } = useFilterStore();
 
   const searchQuery = useSearchStore((state) => state.searchQuery);
+  const { products: liveProducts, fetchProducts } = useProductsStore();
+  const { fetchCategories } = useCategoriesStore();
+
+  useEffect(() => {
+    fetchProducts();
+    fetchCategories();
+  }, [fetchProducts, fetchCategories]);
+
+  const allProducts = liveProducts || [];
 
   // Trigger brief shimmer state on filter / initial load
   useEffect(() => {
@@ -66,10 +77,15 @@ export const ProductListingPage: React.FC<ProductListingPageProps> = ({
 
   // Filter and sort products
   const filteredProducts = useMemo(() => {
-    return PRODUCTS.filter((product: Product) => {
-      // Category filter
-      if (initialCategory && initialCategory !== 'All' && product.category !== initialCategory) {
-        return false;
+    return allProducts.filter((product: Product) => {
+      // Category filter (flexible matching by slug, UUID, or name)
+      if (initialCategory && initialCategory !== 'All' && initialCategory !== 'ALL') {
+        const catTarget = initialCategory.toLowerCase();
+        const matchesCategory =
+          product.category?.toLowerCase() === catTarget ||
+          (product as any).categoryId === initialCategory ||
+          (product as any).categoryName?.toLowerCase() === catTarget;
+        if (!matchesCategory) return false;
       }
 
       // Tag filter

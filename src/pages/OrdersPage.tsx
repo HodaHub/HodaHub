@@ -1,6 +1,5 @@
-import React from 'react';
-import { Truck, Clock, CheckCircle2, ShieldCheck, Download, AlertCircle } from 'lucide-react';
-import { PRODUCTS } from '../data/products';
+import React, { useState, useEffect } from 'react';
+import { Truck, Clock, CheckCircle2, ShieldCheck, Download, AlertCircle, Package } from 'lucide-react';
 import { Product } from '../types';
 import { formatPrice } from '../lib/utils';
 import { useAuthStore } from '../store/useAuthStore';
@@ -12,36 +11,30 @@ interface OrdersPageProps {
 
 export const OrdersPage: React.FC<OrdersPageProps> = ({ onNavigate, onSelectProduct }) => {
   const { user } = useAuthStore();
+  const [customerOrders, setCustomerOrders] = useState<any[]>([]);
 
-  const customerOrders = [
-    {
-      id: 'HODA-ORD-2026-904128',
-      date: '04 Sep 2026',
-      product: PRODUCTS[0], // iPhone 15 Pro
-      price: PRODUCTS[0].price,
-      // Delivery date pending case (GAP 2 requirement)
-      estimatedDeliveryDate: null,
-      statusText: 'Processing at fulfillment hub',
-    },
-    {
-      id: 'HODA-ORD-2026-882319',
-      date: '03 Sep 2026',
-      product: PRODUCTS[1], // Sony Headphones
-      price: PRODUCTS[1].price,
-      // Delivery date confirmed case (GAP 2 requirement)
-      estimatedDeliveryDate: '2026-09-07',
-      statusText: 'Shipped via HodaExpress',
-    },
-    {
-      id: 'HODA-ORD-2026-781904',
-      date: '28 Aug 2026',
-      product: PRODUCTS[2], // Samsung S24
-      price: PRODUCTS[2].price,
-      estimatedDeliveryDate: '2026-08-30',
-      isDelivered: true,
-      statusText: 'Delivered on 30 Aug 2026',
-    },
-  ];
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('hodahub_local_orders') || '[]');
+      if (Array.isArray(stored)) {
+        setCustomerOrders(
+          stored.map((o: any) => ({
+            id: o.orderId || o.id,
+            date: o.orderDate ? new Date(o.orderDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Recently',
+            product: {
+              id: o.id || 'prod',
+              title: o.productTitle || 'Ordered Item',
+              images: [o.productImage || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80'],
+            },
+            price: o.price || 0,
+            estimatedDeliveryDate: o.estimatedDeliveryDate || null,
+            statusText: o.orderStatus === 'delivered' ? 'Delivered' : (o.orderStatus === 'shipped' ? 'Shipped' : 'Processing at fulfillment hub'),
+            isDelivered: o.orderStatus === 'delivered',
+          }))
+        );
+      }
+    } catch (_) {}
+  }, []);
 
   // Helper to compute countdown text
   const getDeliveryCountdown = (targetDateStr: string) => {
@@ -87,7 +80,20 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({ onNavigate, onSelectProd
 
       {/* Orders List */}
       <div className="space-y-4">
-        {customerOrders.map((ord) => {
+        {customerOrders.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-12 text-center shadow-sm">
+            <Package className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+            <h3 className="text-base font-bold text-slate-900">No orders placed yet</h3>
+            <p className="text-xs text-slate-500 mt-1 mb-4">When you place orders, they will show up here with live shipment tracking.</p>
+            <button
+              onClick={() => onNavigate('home')}
+              className="px-5 py-2 bg-primary-600 text-white rounded-xl text-xs font-bold shadow-sm hover:bg-primary-700 transition-colors"
+            >
+              Start Shopping
+            </button>
+          </div>
+        ) : (
+          customerOrders.map((ord) => {
           const isDatePending = !ord.estimatedDeliveryDate && !ord.isDelivered;
           const countdown = ord.estimatedDeliveryDate ? getDeliveryCountdown(ord.estimatedDeliveryDate) : null;
 
@@ -194,7 +200,8 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({ onNavigate, onSelectProd
               </div>
             </div>
           );
-        })}
+        })
+      )}
       </div>
     </div>
   );

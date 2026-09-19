@@ -25,6 +25,8 @@ import {
   replaceCloudinaryImage,
 } from '../../lib/cloudinary';
 import { supabase } from '../../lib/supabase';
+import { useCategoriesStore } from '../../store/useCategoriesStore';
+import { useProductsStore } from '../../store/useProductsStore';
 
 export const AdminProductsView: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -36,11 +38,20 @@ export const AdminProductsView: React.FC = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [submittingProduct, setSubmittingProduct] = useState(false);
 
+  // Dynamic Categories from store
+  const { categories, fetchCategories, createCategory } = useCategoriesStore();
+  const { addProduct, updateProduct: updateStoreProduct, deleteProduct: deleteStoreProduct } = useProductsStore();
+
+  // Quick Category creation state
+  const [showQuickCategoryModal, setShowQuickCategoryModal] = useState(false);
+  const [quickCatName, setQuickCatName] = useState('');
+  const [savingQuickCat, setSavingQuickCat] = useState(false);
+
   // Form State for "Add / Edit Product"
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [brand, setBrand] = useState('HodaHub');
-  const [category, setCategory] = useState('electronics');
+  const [category, setCategory] = useState('general');
   const [sku, setSku] = useState('');
   const [price, setPrice] = useState('');
   const [mrp, setMrp] = useState('');
@@ -113,6 +124,10 @@ export const AdminProductsView: React.FC = () => {
   };
 
   useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
+
+  useEffect(() => {
     loadProducts();
     setAvailableBoxOptionsList(getStoredBoxOptions());
   }, [selectedCategory]);
@@ -129,6 +144,7 @@ export const AdminProductsView: React.FC = () => {
     try {
       await adminApi.deleteProduct(id);
       setProducts((prev) => prev.filter((p) => p.id !== id && (p as any)._id !== id));
+      deleteStoreProduct(id);
       showToast(`Product "${name}" deleted from HodaHub catalog.`);
     } catch (err: any) {
       alert(err.message || 'Failed to delete product');
@@ -298,12 +314,32 @@ export const AdminProductsView: React.FC = () => {
     }
   };
 
+  const handleQuickCategorySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickCatName.trim()) return;
+    setSavingQuickCat(true);
+    try {
+      const newCat = await createCategory({
+        name: quickCatName.trim(),
+      });
+      setCategory(newCat.slug || newCat.id);
+      setShowQuickCategoryModal(false);
+      setQuickCatName('');
+      showToast(`Category "${newCat.name}" created.`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to create category');
+    } finally {
+      setSavingQuickCat(false);
+    }
+  };
+
   const handleOpenAddModal = () => {
     setEditingProduct(null);
     setTitle('');
     setDescription('');
     setBrand('HodaHub');
-    setCategory('electronics');
+    const defaultCat = categories.length > 0 ? (categories[0].slug || categories[0].id) : 'general';
+    setCategory(defaultCat);
     setSku('');
     setPrice('');
     setMrp('');
@@ -325,7 +361,8 @@ export const AdminProductsView: React.FC = () => {
     setTitle(product.title || '');
     setDescription(product.description || '');
     setBrand(product.brand || 'HodaHub');
-    setCategory(product.category || 'electronics');
+    const fallbackCat = categories.length > 0 ? (categories[0].slug || categories[0].id) : 'general';
+    setCategory(product.category || fallbackCat);
     setSku(product.sku || '');
     setPrice(String(product.price || ''));
     setMrp(String(product.originalPrice || ''));
@@ -417,6 +454,7 @@ export const AdminProductsView: React.FC = () => {
             return p;
           })
         );
+        updateStoreProduct(targetId, payload);
         setShowAddModal(false);
         setEditingProduct(null);
         showToast(`Successfully updated "${payload.title}" in HodaHub catalog.`);
@@ -428,6 +466,7 @@ export const AdminProductsView: React.FC = () => {
           const filtered = prev.filter((p) => (p.id || (p as any)._id) !== targetId);
           return [created, ...filtered];
         });
+        addProduct(created);
         setShowAddModal(false);
         showToast(`Successfully added "${created.title}" to HodaHub catalog.`);
       }
@@ -494,11 +533,19 @@ export const AdminProductsView: React.FC = () => {
             className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none font-medium cursor-pointer"
           >
             <option value="ALL">All Categories</option>
-            {CATEGORIES.map((cat) => (
-              <option key={cat.id} value={cat.id}>
-                {cat.name}
-              </option>
-            ))}
+            {categories.length > 0 ? (
+              categories.map((cat) => (
+                <option key={cat.id} value={cat.slug || cat.id}>
+                  {cat.name}
+                </option>
+              ))
+            ) : (
+              CATEGORIES.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))
+            )}
           </select>
         </div>
       </div>
@@ -714,18 +761,47 @@ export const AdminProductsView: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-slate-700 font-semibold mb-1">Category</label>
-                    <select
-                      value={category}
-                      onChange={(e) => setCategory(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:border-primary-500 focus:outline-none capitalize cursor-pointer"
-                    >
-                      {CATEGORIES.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-slate-700 font-semibold">Category *</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowQuickCategoryModal(true)}
+                        className="text-[11px] text-primary-600 hover:text-primary-700 font-bold flex items-center gap-0.5 cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add Category</span>
+                      </button>
+                    </div>
+                    {categories.length > 0 ? (
+                      <select
+                        value={category}
+                        onChange={(e) => setCategory(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:border-primary-500 focus:outline-none capitalize cursor-pointer"
+                      >
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.slug || c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={category}
+                          onChange={(e) => setCategory(e.target.value)}
+                          placeholder="e.g. Watches, Mobiles, Shoes..."
+                          className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs focus:border-primary-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowQuickCategoryModal(true)}
+                          className="px-2.5 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer"
+                        >
+                          + New
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -1249,6 +1325,68 @@ export const AdminProductsView: React.FC = () => {
                 Done
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK ADD CATEGORY MODAL */}
+      {showQuickCategoryModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="h-14 px-5 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-primary-400" />
+                <h3 className="font-bold text-sm">Quick Add Category</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQuickCategoryModal(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickCategorySubmit} className="p-5 space-y-4">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1 text-xs">
+                  Category Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={quickCatName}
+                  onChange={(e) => setQuickCatName(e.target.value)}
+                  placeholder="e.g. Watches, Sneakers, Handbags..."
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:border-primary-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickCategoryModal(false)}
+                  className="px-3 py-1.5 text-slate-600 hover:text-slate-900 text-xs font-semibold rounded-lg cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingQuickCat || !quickCatName.trim()}
+                  className="px-4 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {savingQuickCat ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Create Category</span>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

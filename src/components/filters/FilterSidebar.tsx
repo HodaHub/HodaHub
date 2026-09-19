@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Check, RotateCcw, Star, ShieldCheck } from 'lucide-react';
 import { useFilterStore } from '../../store/useFilterStore';
+import { useProductsStore } from '../../store/useProductsStore';
 import { PRODUCTS } from '../../data/products';
 import { formatPrice } from '../../lib/utils';
 
@@ -26,12 +27,23 @@ export const FilterSidebar: React.FC<FilterSidebarProps> = ({ currentCategory })
     resetFilters,
   } = useFilterStore();
 
+  const liveProducts = useProductsStore((state) => state.products);
+  const allProducts = liveProducts && liveProducts.length > 0 ? liveProducts : PRODUCTS;
+
   // Extract unique brands for currently visible/relevant products
   const availableBrands = Array.from(
     new Set(
-      PRODUCTS.filter((p) => !currentCategory || currentCategory === 'All' || p.category === currentCategory).map(
-        (p) => p.brand
-      )
+      allProducts
+        .filter((p) => {
+          if (!currentCategory || currentCategory === 'All' || currentCategory === 'ALL') return true;
+          const cat = currentCategory.toLowerCase();
+          return (
+            p.category?.toLowerCase() === cat ||
+            (p as any).categoryId === currentCategory ||
+            (p as any).categoryName?.toLowerCase() === cat
+          );
+        })
+        .map((p) => p.brand)
     )
   );
 

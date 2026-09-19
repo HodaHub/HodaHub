@@ -27,7 +27,7 @@ import { PriceDisplay } from '../components/common/PriceDisplay';
 import { TrustBadge } from '../components/common/TrustBadge';
 import { ImageMagnifier } from '../components/product/ImageMagnifier';
 import { ProductStrip } from '../components/product/ProductStrip';
-import { PRODUCTS } from '../data/products';
+import { useProductsStore } from '../store/useProductsStore';
 import { getDeliveryDateString } from '../lib/utils';
 import { checkServiceability, DeliveryServiceabilityResult } from '../services/deliveryService';
 import { SEO } from '../components/common/SEO';
@@ -118,9 +118,10 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     onNavigate('checkout');
   };
 
-  // Similar items
-  const similarProducts = PRODUCTS.filter(
-    (p) => p.category === product.category && p.id !== product.id
+  // Similar items from live catalog
+  const liveProds = useProductsStore((state) => state.products);
+  const similarProducts = (liveProds || []).filter(
+    (p: Product) => p.category === product.category && p.id !== product.id
   ).slice(0, 5);
 
   const productSlug = getProductSlug(product);
@@ -235,21 +236,24 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                 </button>
               </div>
 
-              {/* Mobile pagination dot indicators (< sm) */}
-              <div className="flex sm:hidden justify-center items-center gap-2 mt-3" aria-label="Image gallery pagination">
-                {product.images.map((_, idx) => (
+              {/* Mobile Thumbnail Carousel Rail (< sm) */}
+              <div className="flex sm:hidden items-center gap-2 mt-3 overflow-x-auto no-scrollbar pb-1" aria-label="Image gallery thumbnails">
+                {product.images.map((img: string, idx: number) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => setSelectedImageIndex(idx)}
-                    aria-label={`Switch to image ${idx + 1}`}
-                    className={`w-2.5 h-2.5 rounded-full transition-all min-w-[24px] min-h-[24px] flex items-center justify-center`}
+                    aria-label={`View ${product.title} angle ${idx + 1}`}
+                    className={`w-12 h-12 rounded-lg p-0.5 border-2 transition-all flex-shrink-0 bg-white overflow-hidden ${
+                      selectedImageIndex === idx
+                        ? 'border-primary-600 shadow-sm ring-1 ring-primary-400'
+                        : 'border-slate-200'
+                    }`}
                   >
-                    <span
-                      className={`block rounded-full transition-all ${selectedImageIndex === idx
-                          ? 'w-6 h-2 bg-primary-600'
-                          : 'w-2 h-2 bg-slate-300 hover:bg-slate-400'
-                        }`}
+                    <img
+                      src={img}
+                      alt={`Thumbnail ${idx + 1}`}
+                      className="w-full h-full object-contain mix-blend-multiply"
                     />
                   </button>
                 ))}

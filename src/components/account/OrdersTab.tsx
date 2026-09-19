@@ -15,7 +15,6 @@ import {
   FileText,
 } from 'lucide-react';
 import { formatPrice } from '../../lib/utils';
-import { PRODUCTS } from '../../data/products';
 import { Product } from '../../types';
 import { useCartStore } from '../../store/useCartStore';
 
@@ -54,123 +53,46 @@ export const OrdersTab: React.FC<OrdersTabProps> = ({ onNavigate, onSelectProduc
   const [selectedOrder, setSelectedOrder] = useState<UserOrder | null>(null);
   const [reorderSuccessMsg, setReorderSuccessMsg] = useState<string | null>(null);
 
-  // Initial user orders (seeded with realistic HodaHub orders + any locally placed orders)
+  // User orders loaded from locally placed orders or real backend orders
   const [orders] = useState<UserOrder[]>(() => {
-    const baseOrders: UserOrder[] = [
-      {
-        id: 'ord-101',
-        orderId: 'HODA-ORD-2026-904128',
-        date: '04 Sep 2026',
-        items: [
-          {
-            product: PRODUCTS[0], // iPhone 15 Pro
-            quantity: 1,
-            price: PRODUCTS[0].price,
-            variant: '256 GB',
-            color: 'Natural Titanium',
-          },
-        ],
-        totalPrice: PRODUCTS[0].price,
-        orderStatus: 'delivery_date_pending',
-        estimatedDeliveryDate: null,
-        awbNumber: 'HODA-XPR-8821901',
-        shippingAddress: {
-          name: 'Anand Rao',
-          addressLine: 'Flat 402, Green Orchid Apartments, 12th Main',
-          city: 'Bengaluru',
-          state: 'Karnataka',
-          pincode: '560001',
-          phone: '+91 98765 43210',
-        },
-      },
-      {
-        id: 'ord-102',
-        orderId: 'HODA-ORD-2026-882319',
-        date: '03 Sep 2026',
-        items: [
-          {
-            product: PRODUCTS[1], // Sony Headphones
-            quantity: 1,
-            price: PRODUCTS[1].price,
-            color: 'Silver Platinum',
-          },
-        ],
-        totalPrice: PRODUCTS[1].price,
-        orderStatus: 'shipped',
-        estimatedDeliveryDate: '2026-09-07',
-        awbNumber: 'HODA-AWB-4491028',
-        shippingAddress: {
-          name: 'Anand Rao',
-          addressLine: 'Flat 402, Green Orchid Apartments, 12th Main',
-          city: 'Bengaluru',
-          state: 'Karnataka',
-          pincode: '560001',
-          phone: '+91 98765 43210',
-        },
-      },
-      {
-        id: 'ord-103',
-        orderId: 'HODA-ORD-2026-774912',
-        date: '28 Aug 2026',
-        items: [
-          {
-            product: PRODUCTS[2], // Samsung S24 Ultra
-            quantity: 1,
-            price: PRODUCTS[2].price,
-            variant: '512 GB',
-            color: 'Titanium Gray',
-          },
-        ],
-        totalPrice: PRODUCTS[2].price,
-        orderStatus: 'delivered',
-        estimatedDeliveryDate: '2026-08-30',
-        awbNumber: 'HODA-AWB-2299104',
-        shippingAddress: {
-          name: 'Anand Rao',
-          addressLine: 'Flat 402, Green Orchid Apartments, 12th Main',
-          city: 'Bengaluru',
-          state: 'Karnataka',
-          pincode: '560001',
-          phone: '+91 98765 43210',
-        },
-      },
-    ];
-
     try {
       const local = JSON.parse(localStorage.getItem('hodahub_local_orders') || '[]');
       if (Array.isArray(local) && local.length > 0) {
-        const mapped = local.map((loc: any, idx: number) => ({
+        return local.map((loc: any, idx: number) => ({
           id: loc.orderId || `loc-${idx}`,
           orderId: loc.orderId,
           date: loc.orderDate || new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
           items: [
             {
-              product: PRODUCTS[0],
+              product: loc.product || {
+                id: loc.id || 'prod',
+                title: loc.productTitle || 'Ordered Item',
+                images: [loc.productImage || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80'],
+                price: loc.price || 0,
+              },
               quantity: 1,
-              price: loc.price || loc.pricing?.total || 2499,
+              price: loc.price || loc.pricing?.total || 0,
             },
           ],
-          totalPrice: loc.price || loc.pricing?.total || 2499,
+          totalPrice: loc.price || loc.pricing?.total || 0,
           orderStatus: (loc.orderStatus as any) || 'delivery_date_pending',
           estimatedDeliveryDate: loc.estimatedDeliveryDate || null,
           awbNumber: loc.awbNumber || 'HODA-AWB-PENDING',
           shippingAddress: {
             name: loc.customerName || loc.shippingAddress?.name || 'Customer',
             addressLine: loc.addressLine || loc.shippingAddress?.addressLine || 'Street Address',
-            city: loc.customerCity || loc.shippingAddress?.city || 'Bengaluru',
-            state: loc.shippingAddress?.state || 'Karnataka',
-            pincode: loc.pincode || loc.shippingAddress?.pincode || '560001',
-            phone: loc.customerPhone || loc.shippingAddress?.phone || '+91 98765 43210',
+            city: loc.customerCity || loc.shippingAddress?.city || '',
+            state: loc.shippingAddress?.state || '',
+            pincode: loc.pincode || loc.shippingAddress?.pincode || '',
+            phone: loc.customerPhone || loc.shippingAddress?.phone || '',
           },
         }));
-
-        return [...mapped, ...baseOrders];
       }
     } catch {
       // ignore
     }
 
-    return baseOrders;
+    return [];
   });
 
   const handleReorder = (product: Product, e: React.MouseEvent) => {
