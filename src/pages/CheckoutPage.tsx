@@ -32,6 +32,7 @@ import { PriceBreakupCard } from '../components/cart/PriceBreakupCard';
 import { formatPrice, getDeliveryDateString } from '../lib/utils';
 import { SEO } from '../components/common/SEO';
 import { supabase } from '../lib/supabase';
+import { lookupPincode } from '../services/pincodeService';
 
 interface CheckoutPageProps {
   onNavigate: (page: string, params?: Record<string, any>) => void;
@@ -83,8 +84,8 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
     pincode: '',
     locality: '',
     addressLine: '',
-    city: 'Bengaluru',
-    state: 'Karnataka',
+    city: '',
+    state: '',
     type: 'HOME' as 'HOME' | 'WORK',
   });
 
@@ -229,11 +230,15 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
     const created: Address = {
       ...newUserAddress,
       id: newId,
-      isDefault: false,
+      isDefault: userAddresses.length === 0,
     };
     setUserAddresses([...userAddresses, created]);
     setSelectedUserAddressId(newId);
     setShowNewUserAddressForm(false);
+    useAuthStore.getState().addAddress({
+      ...newUserAddress,
+      isDefault: userAddresses.length === 0,
+    });
   };
 
   const handlePlaceOrder = async () => {
@@ -907,10 +912,21 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
                             placeholder="6-digit Pincode *"
                             maxLength={6}
                             value={newUserAddress.pincode}
-                            onChange={(e) =>
-                              setNewUserAddress({ ...newUserAddress, pincode: e.target.value })
-                            }
-                            className="p-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-primary-500 font-mono"
+                            onChange={async (e) => {
+                              const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                              setNewUserAddress((prev) => ({ ...prev, pincode: val }));
+                              if (val.length === 6) {
+                                const result = await lookupPincode(val);
+                                if (result) {
+                                  setNewUserAddress((prev) => ({
+                                    ...prev,
+                                    city: result.city,
+                                    state: result.state,
+                                  }));
+                                }
+                              }
+                            }}
+                            className="p-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-primary-500 font-mono font-bold"
                             required
                           />
                           <input
@@ -919,6 +935,26 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
                             value={newUserAddress.locality}
                             onChange={(e) =>
                               setNewUserAddress({ ...newUserAddress, locality: e.target.value })
+                            }
+                            className="p-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-primary-500"
+                            required
+                          />
+                          <input
+                            type="text"
+                            placeholder="City *"
+                            value={newUserAddress.city}
+                            onChange={(e) =>
+                              setNewUserAddress({ ...newUserAddress, city: e.target.value })
+                            }
+                            className="p-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-primary-500"
+                            required
+                          />
+                          <input
+                            type="text"
+                            placeholder="State *"
+                            value={newUserAddress.state}
+                            onChange={(e) =>
+                              setNewUserAddress({ ...newUserAddress, state: e.target.value })
                             }
                             className="p-2 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:border-primary-500"
                             required
@@ -1179,12 +1215,23 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
                             maxLength={6}
                             placeholder="e.g. 560001"
                             value={guestForm.pincode}
-                            onChange={(e) =>
-                              setGuestForm({
-                                ...guestForm,
-                                pincode: e.target.value.replace(/\D/g, ''),
-                              })
-                            }
+                            onChange={async (e) => {
+                              const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                              setGuestForm((prev) => ({
+                                ...prev,
+                                pincode: val,
+                              }));
+                              if (val.length === 6) {
+                                const result = await lookupPincode(val);
+                                if (result) {
+                                  setGuestForm((prev) => ({
+                                    ...prev,
+                                    city: result.city,
+                                    state: result.state,
+                                  }));
+                                }
+                              }
+                            }}
                             className="w-full sm:w-48 p-2.5 border-2 border-primary-500 rounded-xl text-xs bg-white focus:outline-none font-mono font-bold"
                           />
                           <span className="text-[10px] text-slate-500 mt-1 block">

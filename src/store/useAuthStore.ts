@@ -195,6 +195,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(authUser));
 
+      // Persist customer profile into Supabase public.profiles table
+      try {
+        await supabase.from('profiles').upsert(
+          {
+            phone: userPhone,
+            name: userName,
+            role: userRole,
+            email: userEmail,
+          },
+          { onConflict: 'phone' }
+        );
+      } catch (e) {
+        console.warn('Profile sync note:', e);
+      }
+
       set({
         user: authUser,
         isAuthenticated: true,
@@ -285,8 +300,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await supabase
         .from('profiles')
-        .update({ name: cleanName, email: cleanEmail })
-        .eq('id', user._id);
+        .upsert(
+          {
+            phone: user.phone,
+            name: cleanName,
+            email: cleanEmail || null,
+            role: user.role || 'user',
+          },
+          { onConflict: 'phone' }
+        );
     } catch (err) {
       console.warn('Profile Postgres sync warning:', err);
     }
@@ -350,19 +372,40 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   updateAddress: async (id: string, addressUpdates: Partial<Address>) => {
     const { user } = get();
-    if (!user || !user.addresses) return false;
+    if (!user) return false;
 
+    const currentAddresses = user.addresses || [];
     const isSettingDefault = !!addressUpdates.isDefault;
 
-    const updatedAddresses = user.addresses.map((addr: Address) => {
-      if (addr.id === id) {
-        return { ...addr, ...addressUpdates };
-      }
-      if (isSettingDefault) {
-        return { ...addr, isDefault: false };
-      }
-      return addr;
-    });
+    const exists = currentAddresses.some((addr: Address) => addr.id === id);
+    let updatedAddresses: Address[];
+
+    if (exists) {
+      updatedAddresses = currentAddresses.map((addr: Address) => {
+        if (addr.id === id) {
+          return { ...addr, ...addressUpdates };
+        }
+        if (isSettingDefault) {
+          return { ...addr, isDefault: false };
+        }
+        return addr;
+      });
+    } else {
+      // If address was not yet in user array (e.g. from fallback ID), create it!
+      const newAddress: Address = {
+        id: `addr-${Date.now()}`,
+        name: addressUpdates.name || user.name || 'Customer',
+        phone: addressUpdates.phone || user.phone || '',
+        pincode: addressUpdates.pincode || '',
+        locality: addressUpdates.locality || '',
+        addressLine: addressUpdates.addressLine || '',
+        city: addressUpdates.city || 'Bengaluru',
+        state: addressUpdates.state || 'Karnataka',
+        type: addressUpdates.type || 'HOME',
+        isDefault: isSettingDefault || currentAddresses.length === 0,
+      };
+      updatedAddresses = [...currentAddresses, newAddress];
+    }
 
     const updatedUser: AuthUser = {
       ...user,
@@ -374,15 +417,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     // Sync with Postgres
     try {
-      const updatePayload: any = {};
-      if (addressUpdates.addressLine) updatePayload.line1 = addressUpdates.addressLine;
-      if (addressUpdates.locality !== undefined) updatePayload.line2 = addressUpdates.locality;
-      if (addressUpdates.city) updatePayload.city = addressUpdates.city;
-      if (addressUpdates.state) updatePayload.state = addressUpdates.state;
-      if (addressUpdates.pincode) updatePayload.pincode = addressUpdates.pincode;
-      if (addressUpdates.isDefault !== undefined) updatePayload.is_default = addressUpdates.isDefault;
+      if (id && id.includes('-') && id.length === 36) {
+        const updatePayload: any = {};
+        if (addressUpdates.addressLine) updatePayload.line1 = addressUpdates.addressLine;
+        if (addressUpdates.locality !== undefined) updatePayload.line2 = addressUpdates.locality;
+        if (addressUpdates.city) updatePayload.city = addressUpdates.city;
+        if (addressUpdates.state) updatePayload.state = addressUpdates.state;
+        if (addressUpdates.pincode) updatePayload.pincode = addressUpdates.pincode;
+        if (addressUpdates.isDefault !== undefined) updatePayload.is_default = addressUpdates.isDefault;
 
-      await supabase.from('addresses').update(updatePayload).eq('id', id);
+        await supabase.from('addresses').update(updatePayload).eq('id', id);
+      }
     } catch (err) {
       console.warn('Address Postgres update warning:', err);
     }

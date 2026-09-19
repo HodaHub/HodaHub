@@ -11,9 +11,11 @@ import {
   AlertCircle,
   X,
   ShieldCheck,
+  Loader2,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { Address } from '../../types';
+import { lookupPincode } from '../../services/pincodeService';
 
 export const AddressesTab: React.FC = () => {
   const { user, addAddress, updateAddress, deleteAddress, setDefaultAddress } = useAuthStore();
@@ -21,6 +23,8 @@ export const AddressesTab: React.FC = () => {
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [isFetchingPincode, setIsFetchingPincode] = useState(false);
+  const [pincodeMessage, setPincodeMessage] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState<Omit<Address, 'id'>>({
@@ -29,8 +33,8 @@ export const AddressesTab: React.FC = () => {
     pincode: '',
     locality: '',
     addressLine: '',
-    city: 'Bengaluru',
-    state: 'Karnataka',
+    city: '',
+    state: '',
     type: 'HOME',
     isDefault: false,
   });
@@ -40,22 +44,7 @@ export const AddressesTab: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const addresses: Address[] = user?.addresses && user.addresses.length > 0
-    ? user.addresses
-    : [
-        {
-          id: 'addr-default-1',
-          name: user?.name || 'Anand Rao',
-          phone: user?.phone || '+91 98765 43210',
-          pincode: '560001',
-          locality: 'Indiranagar 100ft Road',
-          addressLine: 'Flat 402, Green Orchid Apartments, 12th Main',
-          city: 'Bengaluru',
-          state: 'Karnataka',
-          type: 'HOME',
-          isDefault: true,
-        },
-      ];
+  const addresses: Address[] = user?.addresses || [];
 
   const handleOpenAddModal = () => {
     setEditingAddressId(null);
@@ -65,12 +54,13 @@ export const AddressesTab: React.FC = () => {
       pincode: '',
       locality: '',
       addressLine: '',
-      city: 'Bengaluru',
-      state: 'Karnataka',
+      city: '',
+      state: '',
       type: 'HOME',
       isDefault: addresses.length === 0,
     });
     setFormError(null);
+    setPincodeMessage(null);
     setShowModal(true);
   };
 
@@ -88,6 +78,7 @@ export const AddressesTab: React.FC = () => {
       isDefault: addr.isDefault,
     });
     setFormError(null);
+    setPincodeMessage(null);
     setShowModal(true);
   };
 
@@ -169,78 +160,97 @@ export const AddressesTab: React.FC = () => {
       </div>
 
       {/* Address Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {addresses.map((addr) => (
-          <div
-            key={addr.id}
-            className={`p-5 rounded-2xl border transition-all relative flex flex-col justify-between ${
-              addr.isDefault
-                ? 'bg-primary-50/20 border-primary-300 ring-1 ring-primary-200'
-                : 'bg-white border-slate-200 hover:border-slate-300'
-            }`}
+      {addresses.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-8 text-center max-w-lg mx-auto my-4">
+          <div className="w-12 h-12 rounded-full bg-primary-50 text-primary-600 flex items-center justify-center mx-auto mb-3">
+            <MapPin className="w-6 h-6" />
+          </div>
+          <h3 className="font-bold text-sm text-slate-800">No Saved Delivery Addresses</h3>
+          <p className="text-xs text-slate-500 mt-1 mb-4">
+            You don't have any shipping addresses saved yet. Add one to speed up your checkout.
+          </p>
+          <button
+            onClick={handleOpenAddModal}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
           >
-            <div className="space-y-3">
-              {/* Type Badge & Default Status */}
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase bg-slate-100 text-slate-700">
-                  {addr.type === 'HOME' ? <Home className="w-3 h-3" /> : <Briefcase className="w-3 h-3" />}
-                  <span>{addr.type}</span>
-                </span>
-
-                {addr.isDefault ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-mono">
-                    <Star className="w-3 h-3 fill-emerald-600 text-emerald-600" />
-                    <span>Default Delivery</span>
+            <Plus className="w-4 h-4" />
+            <span>Add New Address</span>
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {addresses.map((addr) => (
+            <div
+              key={addr.id}
+              className={`p-5 rounded-2xl border transition-all relative flex flex-col justify-between ${
+                addr.isDefault
+                  ? 'bg-primary-50/20 border-primary-300 ring-1 ring-primary-200'
+                  : 'bg-white border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              <div className="space-y-3">
+                {/* Type Badge & Default Status */}
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase bg-slate-100 text-slate-700">
+                    {addr.type === 'HOME' ? <Home className="w-3 h-3" /> : <Briefcase className="w-3 h-3" />}
+                    <span>{addr.type}</span>
                   </span>
-                ) : (
-                  <button
-                    onClick={() => handleSetDefault(addr.id)}
-                    className="text-[11px] font-bold text-primary-600 hover:text-primary-700 hover:underline cursor-pointer"
-                  >
-                    Set as Default
-                  </button>
-                )}
-              </div>
 
-              {/* Recipient Name & Phone */}
-              <div>
-                <div className="font-bold text-slate-900 text-sm">{addr.name}</div>
-                <div className="font-mono text-slate-600 text-xs mt-0.5">{addr.phone}</div>
-              </div>
+                  {addr.isDefault ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-mono">
+                      <Star className="w-3 h-3 fill-emerald-600 text-emerald-600" />
+                      <span>Default Delivery</span>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => handleSetDefault(addr.id)}
+                      className="text-[11px] font-bold text-primary-600 hover:text-primary-700 hover:underline cursor-pointer"
+                    >
+                      Set as Default
+                    </button>
+                  )}
+                </div>
 
-              {/* Full Address */}
-              <div className="text-xs text-slate-600 leading-relaxed">
-                <div>{addr.addressLine}</div>
-                {addr.locality && <div>{addr.locality}</div>}
+                {/* Recipient Name & Phone */}
                 <div>
-                  {addr.city}, {addr.state} -{' '}
-                  <span className="font-mono font-bold text-slate-900">{addr.pincode}</span>
+                  <div className="font-bold text-slate-900 text-sm">{addr.name}</div>
+                  <div className="font-mono text-slate-600 text-xs mt-0.5">{addr.phone}</div>
+                </div>
+
+                {/* Full Address */}
+                <div className="text-xs text-slate-600 leading-relaxed">
+                  <div>{addr.addressLine}</div>
+                  {addr.locality && <div>{addr.locality}</div>}
+                  <div>
+                    {addr.city}, {addr.state} -{' '}
+                    <span className="font-mono font-bold text-slate-900">{addr.pincode}</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Action Bar */}
-            <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-end gap-3 text-xs">
-              <button
-                onClick={() => handleOpenEditModal(addr)}
-                className="text-slate-600 hover:text-primary-600 font-semibold flex items-center gap-1 cursor-pointer"
-              >
-                <Edit2 className="w-3.5 h-3.5" />
-                <span>Edit</span>
-              </button>
-              <button
-                onClick={() => handleDelete(addr.id, addr.name)}
-                disabled={addresses.length === 1}
-                className="text-slate-400 hover:text-rose-600 font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                title={addresses.length === 1 ? 'Cannot delete your only address' : 'Delete address'}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete</span>
-              </button>
+              {/* Action Bar */}
+              <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-end gap-3 text-xs">
+                <button
+                  onClick={() => handleOpenEditModal(addr)}
+                  className="text-slate-600 hover:text-primary-600 font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Edit</span>
+                </button>
+                <button
+                  onClick={() => handleDelete(addr.id, addr.name)}
+                  disabled={addresses.length === 1}
+                  className="text-slate-400 hover:text-rose-600 font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={addresses.length === 1 ? 'Cannot delete your only address' : 'Delete address'}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* ADD / EDIT ADDRESS MODAL */}
       {showModal && (
@@ -300,16 +310,47 @@ export const AddressesTab: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">PIN Code *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-slate-700 font-bold">PIN Code *</label>
+                    {isFetchingPincode && (
+                      <span className="text-[10px] text-primary-600 flex items-center gap-1 font-medium">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Fetching...
+                      </span>
+                    )}
+                    {pincodeMessage && !isFetchingPincode && (
+                      <span className="text-[10px] text-emerald-600 font-bold">
+                        {pincodeMessage}
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
                     required
                     maxLength={6}
                     inputMode="numeric"
                     value={formData.pincode}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, '');
-                      setFormData({ ...formData, pincode: val });
+                    onChange={async (e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                      setFormData((prev: Omit<Address, 'id'>) => ({ ...prev, pincode: val }));
+                      if (val.length === 6) {
+                        setIsFetchingPincode(true);
+                        setPincodeMessage(null);
+                        const result = await lookupPincode(val);
+                        setIsFetchingPincode(false);
+                        if (result) {
+                          setFormData((prev: Omit<Address, 'id'>) => ({
+                            ...prev,
+                            city: result.city,
+                            state: result.state,
+                          }));
+                          setPincodeMessage('✓ Auto-filled');
+                        } else {
+                          setPincodeMessage(null);
+                        }
+                      } else {
+                        setPincodeMessage(null);
+                      }
                     }}
                     placeholder="e.g. 560001"
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl font-mono font-bold focus:border-primary-500 focus:outline-none"
@@ -323,6 +364,7 @@ export const AddressesTab: React.FC = () => {
                     required
                     value={formData.city}
                     onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    placeholder="e.g. Bengaluru"
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:border-primary-500 focus:outline-none"
                   />
                 </div>
@@ -334,6 +376,7 @@ export const AddressesTab: React.FC = () => {
                     required
                     value={formData.state}
                     onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                    placeholder="e.g. Karnataka"
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:border-primary-500 focus:outline-none"
                   />
                 </div>
