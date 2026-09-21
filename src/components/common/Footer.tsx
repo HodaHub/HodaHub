@@ -12,14 +12,14 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
       return (
         <button
           onClick={() => onNavigate(pageKey)}
-          className="hover:text-white transition-colors text-left"
+          className="hover:text-white transition-colors text-left block leading-snug py-0.5"
         >
           {label}
         </button>
       );
     }
     return (
-      <Link to={to} className="hover:text-white transition-colors">
+      <Link to={to} className="hover:text-white transition-colors block leading-snug py-0.5">
         {label}
       </Link>
     );
@@ -68,9 +68,9 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* Main Footer Links */}
+      {/* Main Footer Links - 2x2 Responsive Grid on Smaller Devices, 3 Columns on Desktop */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 sm:gap-x-8 gap-y-6 sm:gap-y-8">
           {/* Column 1: About HodaHub */}
           <div>
             <p className="text-slate-200 uppercase font-bold tracking-wider text-xs mb-3">ABOUT HODAHUB</p>
@@ -93,10 +93,10 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
             </ul>
           </div>
 
-          {/* Column 3: Consumer Policy */}
-          <div>
+          {/* Column 3: Consumer Policy (spans 2 columns on small devices with 2-column link layout) */}
+          <div className="col-span-2 md:col-span-1 pt-2 sm:pt-0 border-t border-slate-800/60 md:border-t-0">
             <p className="text-slate-200 uppercase font-bold tracking-wider text-xs mb-3">CONSUMER POLICY</p>
-            <ul className="space-y-2">
+            <ul className="grid grid-cols-2 md:grid-cols-1 gap-y-2 gap-x-4">
               <li>{renderLink('/cancellation-returns', 'cancellation-returns', 'Cancellation & Returns')}</li>
               <li>{renderLink('/terms-of-use', 'terms-of-use', 'Terms of Use')}</li>
               <li>{renderLink('/security', 'security', 'Security')}</li>

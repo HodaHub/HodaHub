@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0';
 
@@ -10,6 +11,8 @@ import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0';
  *
  * Brand: HodaHub
  */
+
+declare const Deno: any;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -31,7 +34,7 @@ async function verifyStandardWebhookSignature(
     }
     wh.verify(rawBody, headerObj);
     return true;
-  } catch (libErr) {
+  } catch (_libErr) {
     // 2. Fallback to Web Crypto subtle HMAC-SHA256
     try {
       const id = headers.get('webhook-id') || headers.get('svix-id');
@@ -68,7 +71,7 @@ async function verifyStandardWebhookSignature(
 
       const key = await crypto.subtle.importKey(
         'raw',
-        secretBytes,
+        secretBytes as unknown as BufferSource,
         { name: 'HMAC', hash: 'SHA-256' },
         false,
         ['sign']
@@ -90,16 +93,19 @@ async function verifyStandardWebhookSignature(
   }
 }
 
-serve(async (req) => {
+serve(async (req: any) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ error: { http_code: 405, message: 'Method not allowed' } }),
+      {
+        status: 405,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
   }
 
   try {
@@ -114,7 +120,7 @@ serve(async (req) => {
       if (!isValid) {
         console.error('HodaHub SMS Hook: Unauthorized request. Signature verification failed.');
         return new Response(
-          JSON.stringify({ error: { message: 'Invalid or missing webhook signature' } }),
+          JSON.stringify({ error: { http_code: 401, message: 'Invalid or missing webhook signature' } }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -128,7 +134,7 @@ serve(async (req) => {
       payload = JSON.parse(rawBody);
     } catch {
       return new Response(
-        JSON.stringify({ error: { message: 'Malformed JSON payload' } }),
+        JSON.stringify({ error: { http_code: 400, message: 'Malformed JSON payload' } }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -141,7 +147,7 @@ serve(async (req) => {
     if (!recipientPhone || !otpCode) {
       console.error('HodaHub SMS Hook: Missing phone or OTP code in payload:', payload);
       return new Response(
-        JSON.stringify({ error: { message: 'Missing recipient phone or OTP code in payload' } }),
+        JSON.stringify({ error: { http_code: 400, message: 'Missing recipient phone or OTP code in payload' } }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -170,7 +176,7 @@ serve(async (req) => {
       const f2sData = await fast2smsRes.json().catch(() => ({}));
       if (fast2smsRes.ok && f2sData.return !== false) {
         console.log(`HodaHub: OTP dispatched via Fast2SMS to ${mobile10Digits.slice(-4).padStart(10, '*')}`);
-        return new Response(JSON.stringify({ success: true, requestId: f2sData.request_id }), {
+        return new Response(JSON.stringify({}), {
           status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -180,9 +186,9 @@ serve(async (req) => {
     }
 
     // 5. Retrieve MSG91 configuration
-    const msg91AuthKey = Deno.env.get('MSG91_AUTH_KEY');
-    const msg91SenderId = Deno.env.get('MSG91_SENDER_ID') || 'HODAHB';
-    const msg91TemplateId = Deno.env.get('MSG91_TEMPLATE_ID_OTP');
+    const msg91AuthKey = Deno.env.get('MSG91_AUTH_KEY') || Deno.env.get('VITE_MSG91_AUTH_KEY');
+    const msg91SenderId = Deno.env.get('MSG91_SENDER_ID') || Deno.env.get('VITE_MSG91_SENDER_ID') || 'HODAHB';
+    const msg91TemplateId = Deno.env.get('MSG91_TEMPLATE_ID_OTP') || Deno.env.get('VITE_MSG91_TEMPLATE_ID');
 
     if (!msg91AuthKey || !msg91TemplateId) {
       console.warn(
@@ -195,7 +201,7 @@ serve(async (req) => {
       });
     }
 
-    // 5. Dispatch OTP via MSG91 OTP API (v5)
+    // 6. Dispatch OTP via MSG91 OTP API (v5)
     // Query params carry template_id, mobile, and custom otp code
     const otpEndpoint = new URL('https://control.msg91.com/api/v5/otp');
     otpEndpoint.searchParams.set('template_id', msg91TemplateId);
@@ -247,16 +253,17 @@ serve(async (req) => {
           return new Response(
             JSON.stringify({
               error: {
+                http_code: 502,
                 message: responseData.message || flowData.message || 'Failed to deliver OTP via MSG91',
               },
             }),
             { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
-      } catch (flowErr) {
+      } catch (_flowErr) {
         return new Response(
           JSON.stringify({
-            error: { message: responseData.message || 'MSG91 gateway communication error' },
+            error: { http_code: 502, message: responseData.message || 'MSG91 gateway communication error' },
           }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -265,7 +272,7 @@ serve(async (req) => {
 
     console.log(`HodaHub: OTP dispatched via MSG91 to ${mobile.slice(-4).padStart(mobile.length, '*')}`);
 
-    // 6. Supabase Send SMS Hook contract expects HTTP 200 with an empty JSON object on success
+    // Supabase Send SMS Hook contract expects HTTP 200 with an empty JSON object on success
     return new Response(JSON.stringify({}), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -273,7 +280,7 @@ serve(async (req) => {
   } catch (error: any) {
     console.error('HodaHub SMS Hook unhandled exception:', error);
     return new Response(
-      JSON.stringify({ error: { message: error.message || 'Internal server error' } }),
+      JSON.stringify({ error: { http_code: 500, message: error.message || 'Internal server error' } }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

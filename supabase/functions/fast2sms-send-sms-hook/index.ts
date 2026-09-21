@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0';
 
@@ -12,6 +13,8 @@ import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0';
  *
  * Brand: HodaHub
  */
+
+declare const Deno: any;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -67,7 +70,7 @@ async function verifyStandardWebhookSignature(
 
       const key = await crypto.subtle.importKey(
         'raw',
-        secretBytes,
+        secretBytes as unknown as BufferSource,
         { name: 'HMAC', hash: 'SHA-256' },
         false,
         ['sign']
@@ -88,16 +91,19 @@ async function verifyStandardWebhookSignature(
   }
 }
 
-serve(async (req) => {
+serve(async (req: any) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ error: { http_code: 405, message: 'Method not allowed' } }),
+      {
+        status: 405,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
   }
 
   try {
@@ -111,7 +117,7 @@ serve(async (req) => {
       if (!isValid) {
         console.error('HodaHub SMS Hook: Unauthorized request. Signature verification failed.');
         return new Response(
-          JSON.stringify({ error: { message: 'Invalid or missing webhook signature' } }),
+          JSON.stringify({ error: { http_code: 401, message: 'Invalid or missing webhook signature' } }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -123,7 +129,7 @@ serve(async (req) => {
       payload = JSON.parse(rawBody);
     } catch {
       return new Response(
-        JSON.stringify({ error: { message: 'Malformed JSON payload' } }),
+        JSON.stringify({ error: { http_code: 400, message: 'Malformed JSON payload' } }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -137,7 +143,7 @@ serve(async (req) => {
     if (!recipientPhone || !otpCode) {
       console.error('HodaHub SMS Hook: Missing phone or OTP code in payload:', payload);
       return new Response(
-        JSON.stringify({ error: { message: 'Missing recipient phone or OTP code in payload' } }),
+        JSON.stringify({ error: { http_code: 400, message: 'Missing recipient phone or OTP code in payload' } }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -148,7 +154,7 @@ serve(async (req) => {
 
     if (mobile10Digits.length !== 10) {
       return new Response(
-        JSON.stringify({ error: { message: 'Invalid 10-digit Indian mobile number' } }),
+        JSON.stringify({ error: { http_code: 400, message: 'Invalid 10-digit Indian mobile number' } }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -160,8 +166,8 @@ serve(async (req) => {
       console.warn(
         `HodaHub SMS Hook: FAST2SMS_API_KEY is not set in secrets. Dev mock mode OTP: ${otpCode} for ${mobile10Digits}`
       );
-      // Return 200 so development works smoothly even before key is provided
-      return new Response(JSON.stringify({ success: true, mock: true, otp: otpCode }), {
+      // Return 200 with empty JSON object as required by Supabase Auth hook contract
+      return new Response(JSON.stringify({}), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -186,10 +192,14 @@ serve(async (req) => {
 
     if (!response.ok || responseData.return === false) {
       console.error('Fast2SMS API error response:', responseData);
+      const errMsg = Array.isArray(responseData.message)
+        ? responseData.message.join(', ')
+        : (responseData.message || 'Failed to deliver OTP via Fast2SMS');
       return new Response(
         JSON.stringify({
           error: {
-            message: responseData.message?.[0] || responseData.message || 'Failed to deliver OTP via Fast2SMS',
+            http_code: 502,
+            message: errMsg,
           },
         }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -199,14 +209,14 @@ serve(async (req) => {
     console.log(`HodaHub: OTP dispatched via Fast2SMS to ${mobile10Digits.slice(-4).padStart(10, '*')}`);
 
     // Supabase Send SMS Hook contract expects HTTP 200 with an empty JSON object on success
-    return new Response(JSON.stringify({ success: true, requestId: responseData.request_id }), {
+    return new Response(JSON.stringify({}), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error: any) {
     console.error('HodaHub SMS Hook unhandled exception:', error);
     return new Response(
-      JSON.stringify({ error: { message: error.message || 'Internal server error' } }),
+      JSON.stringify({ error: { http_code: 500, message: error.message || 'Internal server error' } }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

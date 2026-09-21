@@ -227,25 +227,9 @@ export const CartPage: React.FC<CartPageProps> = ({ onNavigate, onSelectProduct 
               })}
             </AnimatePresence>
           </div>
-
-          {/* Place order bottom sticky prompt for mobile */}
-          <div className="lg:hidden bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-            <div>
-              <span className="text-xs text-slate-500">Total payable</span>
-              <p className="text-lg font-black font-mono">
-                ₹{useCartStore.getState().getFinalTotal().toLocaleString('en-IN')}
-              </p>
-            </div>
-            <button
-              onClick={() => onNavigate('checkout')}
-              className="px-6 py-2.5 bg-primary-600 text-white font-bold rounded-lg text-xs"
-            >
-              Place Order
-            </button>
-          </div>
         </div>
 
-        {/* Right Column: Sticky Price Breakup Card */}
+        {/* Right Column: Sticky Price Breakup Card with final Place Order CTA */}
         <div className="lg:col-span-4">
           <PriceBreakupCard
             onCheckout={() => onNavigate('checkout')}
