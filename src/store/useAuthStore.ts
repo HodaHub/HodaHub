@@ -63,11 +63,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const cleanPhone = phone.replace(/\D/g, '').slice(-10);
     const fullPhone = `+91${cleanPhone}`;
 
-    // 1. Check if MSG91 keys are set in environment
+    // 1. Check if Fast2SMS or MSG91 keys are set in frontend environment
+    const fast2smsKey = import.meta.env.VITE_FAST2SMS_API_KEY as string | undefined;
     const msg91Key = import.meta.env.VITE_MSG91_AUTH_KEY as string | undefined;
     const msg91Template = import.meta.env.VITE_MSG91_TEMPLATE_ID as string | undefined;
 
-    if (msg91Key && msg91Template) {
+    if (fast2smsKey) {
+      try {
+        // Fast2SMS Edge function / direct call
+        await supabase.functions.invoke('fast2sms-send-sms-hook', {
+          body: { phone: cleanPhone, otp: Math.floor(100000 + Math.random() * 900000).toString() },
+        }).catch(() => null);
+      } catch (e) {
+        console.warn('Fast2SMS function notice:', e);
+      }
+    } else if (msg91Key && msg91Template) {
       try {
         await fetch(
           `https://control.msg91.com/api/v5/otp?template_id=${encodeURIComponent(msg91Template)}&mobile=91${cleanPhone}&authkey=${encodeURIComponent(msg91Key)}`,

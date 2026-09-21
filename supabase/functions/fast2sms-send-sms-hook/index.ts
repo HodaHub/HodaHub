@@ -2,9 +2,11 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0';
 
 /**
- * HodaHub - Supabase Auth Send SMS Hook (MSG91)
+ * HodaHub - Supabase Auth Send SMS Hook (Fast2SMS)
  *
- * Replaces default built-in phone provider with MSG91 via Supabase Hooks.
+ * Replaces default built-in phone provider with Fast2SMS Quick OTP route.
+ * Fast2SMS does NOT require DLT registration, Entity ID, or business certificates.
+ *
  * Supabase Auth calls this webhook with an internally generated OTP.
  * Webhook signatures are verified using Standard Webhooks (HMAC-SHA256).
  *
@@ -16,14 +18,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, webhook-id, webhook-timestamp, webhook-signature, svix-id, svix-timestamp, svix-signature',
 };
 
-// Fallback manual HMAC-SHA256 signature verification in case standardwebhooks fails
+// Fallback manual HMAC-SHA256 signature verification in case standardwebhooks library fails
 async function verifyStandardWebhookSignature(
   rawBody: string,
   headers: Headers,
   secret: string
 ): Promise<boolean> {
   try {
-    // 1. First attempt with StandardWebhooks library
     const wh = new Webhook(secret);
     const headerObj: Record<string, string> = {};
     for (const [k, v] of headers.entries()) {
@@ -31,8 +32,7 @@ async function verifyStandardWebhookSignature(
     }
     wh.verify(rawBody, headerObj);
     return true;
-  } catch (libErr) {
-    // 2. Fallback to Web Crypto subtle HMAC-SHA256
+  } catch (_libErr) {
     try {
       const id = headers.get('webhook-id') || headers.get('svix-id');
       const timestamp = headers.get('webhook-timestamp') || headers.get('svix-timestamp');
@@ -50,7 +50,6 @@ async function verifyStandardWebhookSignature(
         return false;
       }
 
-      // Extract raw secret bytes (decode base64 if prefixed with whsec_)
       const cleanSecret = secret.startsWith('whsec_') ? secret.slice(6) : secret;
       let secretBytes: Uint8Array;
       try {
@@ -77,7 +76,6 @@ async function verifyStandardWebhookSignature(
       const computedBuffer = await crypto.subtle.sign('HMAC', key, enc.encode(signedPayload));
       const computedBase64 = btoa(String.fromCharCode(...new Uint8Array(computedBuffer)));
 
-      // Signatures header may contain multiple space-delimited signatures (e.g. "v1,abc v1,xyz")
       const passedSignatures = signatureHeader.split(' ');
       return passedSignatures.some((sig) => {
         const parts = sig.split(',');
@@ -103,10 +101,9 @@ serve(async (req) => {
   }
 
   try {
-    // 1. Read raw body text for strict signature verification
     const rawBody = await req.text();
 
-    // 2. Verify signature using SMS_HOOK_SECRET
+    // Verify signature if SMS_HOOK_SECRET is set
     const hookSecret = Deno.env.get('SMS_HOOK_SECRET') || Deno.env.get('SUPABASE_SMS_HOOK_SECRET');
 
     if (hookSecret) {
@@ -118,11 +115,9 @@ serve(async (req) => {
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-    } else {
-      console.warn('HodaHub SMS Hook: SMS_HOOK_SECRET not configured. Please set secret for production security.');
     }
 
-    // 3. Parse JSON payload from Supabase Auth
+    // Parse JSON payload
     let payload: any = {};
     try {
       payload = JSON.parse(rawBody);
@@ -134,7 +129,8 @@ serve(async (req) => {
     }
 
     // Extract phone and OTP from Supabase Send SMS Hook payload contract:
-    // Schema: { user: { phone: "+919876543210", ... }, sms: { otp: "123456" } }
+    // Schema: { user: { phone: "+919876543210" }, sms: { otp: "123456" } }
+    // Or direct: { phone: "9876543210", otp: "123456" }
     const recipientPhone = payload.user?.phone || payload.phone || payload.recipient;
     const otpCode = payload.sms?.otp || payload.otp;
 
@@ -146,127 +142,64 @@ serve(async (req) => {
       );
     }
 
-    // Format phone number for MSG91 (India format requires 91 prefix without leading +)
+    // Fast2SMS requires exact 10-digit Indian mobile numbers (e.g. 9876543210)
     const cleanDigits = recipientPhone.replace(/\D/g, '');
-    const mobile = cleanDigits.length === 10 ? `91${cleanDigits}` : cleanDigits;
+    const mobile10Digits = cleanDigits.slice(-10);
 
-    // 4. Retrieve SMS gateway configuration (Fast2SMS preferred if configured, or MSG91)
-    const fast2smsKey = Deno.env.get('FAST2SMS_API_KEY') || Deno.env.get('VITE_FAST2SMS_API_KEY');
-    if (fast2smsKey) {
-      const mobile10Digits = cleanDigits.slice(-10);
-      const fast2smsRes = await fetch('https://www.fast2sms.com/dev/bulkV2', {
-        method: 'POST',
-        headers: {
-          authorization: fast2smsKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          route: 'otp',
-          variables_values: String(otpCode),
-          numbers: mobile10Digits,
-        }),
-      });
-
-      const f2sData = await fast2smsRes.json().catch(() => ({}));
-      if (fast2smsRes.ok && f2sData.return !== false) {
-        console.log(`HodaHub: OTP dispatched via Fast2SMS to ${mobile10Digits.slice(-4).padStart(10, '*')}`);
-        return new Response(JSON.stringify({ success: true, requestId: f2sData.request_id }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      } else {
-        console.error('Fast2SMS gateway error:', f2sData);
-      }
+    if (mobile10Digits.length !== 10) {
+      return new Response(
+        JSON.stringify({ error: { message: 'Invalid 10-digit Indian mobile number' } }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    // 5. Retrieve MSG91 configuration
-    const msg91AuthKey = Deno.env.get('MSG91_AUTH_KEY');
-    const msg91SenderId = Deno.env.get('MSG91_SENDER_ID') || 'HODAHB';
-    const msg91TemplateId = Deno.env.get('MSG91_TEMPLATE_ID_OTP');
+    // Retrieve Fast2SMS authorization key
+    const fast2smsKey = Deno.env.get('FAST2SMS_API_KEY') || Deno.env.get('VITE_FAST2SMS_API_KEY');
 
-    if (!msg91AuthKey || !msg91TemplateId) {
+    if (!fast2smsKey) {
       console.warn(
-        `HodaHub SMS Hook: Neither FAST2SMS_API_KEY nor MSG91 credentials set. Dev mock mode OTP: ${otpCode} for ${mobile}`
+        `HodaHub SMS Hook: FAST2SMS_API_KEY is not set in secrets. Dev mock mode OTP: ${otpCode} for ${mobile10Digits}`
       );
-      // Return success response so local development & sandbox tests proceed smoothly
-      return new Response(JSON.stringify({}), {
+      // Return 200 so development works smoothly even before key is provided
+      return new Response(JSON.stringify({ success: true, mock: true, otp: otpCode }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // 5. Dispatch OTP via MSG91 OTP API (v5)
-    // Query params carry template_id, mobile, and custom otp code
-    const otpEndpoint = new URL('https://control.msg91.com/api/v5/otp');
-    otpEndpoint.searchParams.set('template_id', msg91TemplateId);
-    otpEndpoint.searchParams.set('mobile', mobile);
-    otpEndpoint.searchParams.set('authkey', msg91AuthKey);
-    otpEndpoint.searchParams.set('otp', String(otpCode));
-
-    const response = await fetch(otpEndpoint.toString(), {
+    // Dispatch OTP via Fast2SMS Quick OTP route (No DLT certificate needed)
+    const fast2smsUrl = 'https://www.fast2sms.com/dev/bulkV2';
+    const response = await fetch(fast2smsUrl, {
       method: 'POST',
       headers: {
+        'authorization': fast2smsKey,
         'Content-Type': 'application/json',
-        authkey: msg91AuthKey,
       },
       body: JSON.stringify({
-        otp: String(otpCode),
-        OTP: String(otpCode),
-        sender: msg91SenderId,
-        company: 'HodaHub',
+        route: 'otp',
+        variables_values: String(otpCode),
+        numbers: mobile10Digits,
       }),
     });
 
     const responseData = await response.json().catch(() => ({}));
 
-    if (!response.ok || (responseData.type && responseData.type === 'error')) {
-      console.error('MSG91 OTP API error response:', responseData);
-
-      // Attempt fallback to MSG91 Flow API in case user registered as a Flow template
-      try {
-        const flowResponse = await fetch('https://control.msg91.com/api/v5/flow/', {
-          method: 'POST',
-          headers: {
-            authkey: msg91AuthKey,
-            'Content-Type': 'application/json',
-            accept: 'application/json',
+    if (!response.ok || responseData.return === false) {
+      console.error('Fast2SMS API error response:', responseData);
+      return new Response(
+        JSON.stringify({
+          error: {
+            message: responseData.message?.[0] || responseData.message || 'Failed to deliver OTP via Fast2SMS',
           },
-          body: JSON.stringify({
-            template_id: msg91TemplateId,
-            sender: msg91SenderId,
-            short_url: '0',
-            mobiles: mobile,
-            otp: String(otpCode),
-            OTP: String(otpCode),
-          }),
-        });
-
-        const flowData = await flowResponse.json().catch(() => ({}));
-        if (!flowResponse.ok || (flowData.type && flowData.type === 'error')) {
-          console.error('MSG91 Flow API fallback error:', flowData);
-          return new Response(
-            JSON.stringify({
-              error: {
-                message: responseData.message || flowData.message || 'Failed to deliver OTP via MSG91',
-              },
-            }),
-            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-      } catch (flowErr) {
-        return new Response(
-          JSON.stringify({
-            error: { message: responseData.message || 'MSG91 gateway communication error' },
-          }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+        }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    console.log(`HodaHub: OTP dispatched via MSG91 to ${mobile.slice(-4).padStart(mobile.length, '*')}`);
+    console.log(`HodaHub: OTP dispatched via Fast2SMS to ${mobile10Digits.slice(-4).padStart(10, '*')}`);
 
-    // 6. Supabase Send SMS Hook contract expects HTTP 200 with an empty JSON object on success
-    return new Response(JSON.stringify({}), {
+    // Supabase Send SMS Hook contract expects HTTP 200 with an empty JSON object on success
+    return new Response(JSON.stringify({ success: true, requestId: responseData.request_id }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -287,24 +287,26 @@ export const HomePage: React.FC<HomePageProps> = ({ onSelectProduct, onNavigate 
         )}
       </section>
 
-      {/* 3. PROMO VALUE TILES (Bank Discounts, Assured Guarantee, Speed) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* 3. PROMO VALUE TILES (Assured Guarantee & SuperFast Delivery in one row) */}
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
         {PROMO_TILES.map((tile) => (
           <div
             key={tile.id}
             onClick={() => onNavigate('plp')}
-            className="bg-white rounded-xl border border-slate-200/90 p-4 shadow-sm hover:border-primary-300 hover:shadow-md transition-all cursor-pointer flex items-center justify-between group"
+            className="bg-white rounded-xl border border-slate-200/90 p-3 sm:p-4 shadow-sm hover:border-primary-300 hover:shadow-md transition-all cursor-pointer flex items-center justify-between group"
           >
-            <div>
-              <span className="text-[10px] font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded uppercase font-mono">
+            <div className="min-w-0 pr-1">
+              <span className="text-[9px] sm:text-[10px] font-bold text-primary-700 bg-primary-50 px-1.5 sm:px-2 py-0.5 rounded uppercase font-mono tracking-wider">
                 {tile.tag}
               </span>
-              <h3 className="font-extrabold text-sm text-slate-900 mt-1 group-hover:text-primary-600 transition-colors">
+              <h3 className="font-extrabold text-xs sm:text-sm text-slate-900 mt-1 group-hover:text-primary-600 transition-colors truncate">
                 {tile.title}
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5 font-medium">{tile.desc}</p>
+              <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 font-medium line-clamp-1 sm:line-clamp-2 leading-tight">
+                {tile.desc}
+              </p>
             </div>
-            <ArrowRight className="w-5 h-5 text-slate-300 group-hover:text-primary-600 group-hover:translate-x-1 transition-all" />
+            <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 text-slate-300 group-hover:text-primary-600 group-hover:translate-x-0.5 transition-all shrink-0" />
           </div>
         ))}
       </div>

@@ -131,24 +131,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-100"
+        className="relative w-full max-w-[420px] mx-auto bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-100 my-auto"
       >
         {/* Close Button */}
         <button
           onClick={closeAuthModal}
-          className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors z-10"
+          aria-label="Close"
+          className="absolute top-3.5 right-3.5 p-2 rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors z-20"
         >
           <X className="w-5 h-5" />
         </button>
 
         {/* Header Visual Banner */}
-        <div className="bg-gradient-to-br from-primary-600 to-primary-800 text-white p-6 pb-8 text-center relative">
+        <div className="w-full bg-gradient-to-br from-primary-600 via-primary-700 to-primary-800 text-white px-5 py-6 sm:p-6 pb-7 sm:pb-8 text-center relative">
           <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center mx-auto mb-3 shadow-inner">
             {step === 'PHONE' ? (
               <Smartphone className="w-6 h-6 text-white" />
@@ -167,7 +168,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 pt-6 -mt-3 bg-white rounded-t-2xl relative">
+        <div className="w-full p-4 sm:p-6 pt-5 sm:pt-6 -mt-3 bg-white rounded-t-2xl relative">
           {(errorMessage || error) && (
             <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
               {errorMessage || error}
@@ -197,7 +198,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                     }}
                     placeholder="Enter 10-digit number"
                     autoFocus
-                    className="flex-1 px-3 py-3 text-slate-900 font-mono font-medium text-base focus:outline-none rounded-r-xl"
+                    className="flex-1 min-w-0 px-3 py-3 text-slate-900 font-mono font-medium text-base focus:outline-none rounded-r-xl"
                   />
                 </div>
               </div>
@@ -226,7 +227,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               </div>
             </form>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-5 sm:space-y-6">
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
@@ -243,8 +244,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   </button>
                 </div>
 
-                {/* 6-Box OTP Input */}
-                <div className="flex items-center justify-between gap-2" onPaste={handlePaste}>
+                {/* 6-Box Responsive OTP Input */}
+                <div className="w-full flex items-center justify-between gap-1.5 sm:gap-2.5" onPaste={handlePaste}>
                   {otpDigits.map((digit, idx) => (
                     <input
                       key={idx}
@@ -253,11 +254,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                       }}
                       type="text"
                       inputMode="numeric"
+                      pattern="[0-9]*"
                       maxLength={1}
                       value={digit}
                       onChange={(e) => handleOtpChange(idx, e.target.value)}
                       onKeyDown={(e) => handleKeyDown(idx, e)}
-                      className="w-12 h-14 text-center font-mono font-bold text-xl border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-primary-600 focus:ring-2 focus:ring-primary-100 transition-all outline-none"
+                      className="flex-1 min-w-0 w-full max-w-[48px] h-12 sm:h-14 text-center font-mono font-bold text-lg sm:text-xl border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-primary-600 focus:ring-2 focus:ring-primary-100 transition-all outline-none shadow-sm"
                     />
                   ))}
                 </div>
@@ -298,7 +300,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
 
               <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center gap-2.5 text-xs text-emerald-800">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>HodaHub 100% Secure Instant Verification</span>
+                <span className="leading-tight">HodaHub 100% Secure Instant Verification</span>
               </div>
             </div>
           )}

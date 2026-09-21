@@ -48,13 +48,6 @@ export const HERO_BANNERS: BannerSlide[] = [
 
 export const PROMO_TILES = [
   {
-    id: 'tile-1',
-    title: 'Bank Offer Bonanza',
-    desc: 'Flat ₹5,000 Instant Discount on HDFC & ICICI Cards',
-    code: 'HODA500',
-    tag: 'HOT PROMO',
-  },
-  {
     id: 'tile-2',
     title: 'HodaAssured Guarantee',
     desc: '100% Genuine Products, 7-Day Easy Replacement',

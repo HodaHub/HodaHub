@@ -72,19 +72,16 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* Main Footer Links - All 16 Verified Routes */}
+      {/* Main Footer Links */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-6 sm:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8">
           {/* Column 1: About HodaHub */}
           <div>
             <p className="text-slate-200 uppercase font-bold tracking-wider text-xs mb-3">ABOUT HODAHUB</p>
             <ul className="space-y-2">
               <li>{renderLink('/contact-us', 'contact-us', 'Contact Us')}</li>
               <li>{renderLink('/about-us', 'about-us', 'About Us')}</li>
-              <li>{renderLink('/careers', 'careers', 'Careers')}</li>
               <li>{renderLink('/hodahub-stories', 'hodahub-stories', 'HodaHub Stories')}</li>
-              <li>{renderLink('/press-media', 'press-media', 'Press & Media')}</li>
-              <li>{renderLink('/corporate-information', 'corporate-information', 'Corporate Information')}</li>
             </ul>
           </div>
 
@@ -94,7 +91,6 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
             <ul className="space-y-2">
               <li>{renderLink('/track-order', 'track-order', 'Track Your Order')}</li>
               <li>{renderLink('/payments-info', 'payments-info', 'Payments')}</li>
-              <li>{renderLink('/shipping-pincodes', 'shipping-pincodes', 'Shipping & Pincodes')}</li>
               <li>{renderLink('/cancellation-returns', 'cancellation-returns', 'Cancellation & Returns')}</li>
               <li>{renderLink('/faq', 'faq', 'FAQ')}</li>
               <li>{renderLink('/report-infringement', 'report-infringement', 'Report Infringement')}</li>
@@ -112,28 +108,6 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
               <li>{renderLink('/sitemap', 'sitemap', 'Sitemap')}</li>
               <li>{renderLink('/grievance-redressal', 'grievance-redressal', 'Grievance Redressal')}</li>
             </ul>
-          </div>
-
-          {/* Column 4 - Address */}
-          <div className="border-t pt-4 sm:pt-0 sm:border-t-0 md:border-l border-slate-800 md:pl-4">
-            <p className="text-slate-200 uppercase font-bold tracking-wider text-xs mb-3">MAIL US</p>
-            <p className="text-slate-400 leading-relaxed text-xs">
-              HodaHub Internet Private Limited,<br />
-              Buildings Alyssa, Begonia & Clove Embassy Tech Village,<br />
-              Outer Ring Road, Devarabeesanahalli Village,<br />
-              Bengaluru, 560103, Karnataka, India
-            </p>
-          </div>
-
-          {/* Column 5 - Office */}
-          <div className="border-t pt-4 sm:pt-0 sm:border-t-0 border-slate-800">
-            <p className="text-slate-200 uppercase font-bold tracking-wider text-xs mb-3">REGISTERED OFFICE</p>
-            <p className="text-slate-400 leading-relaxed text-xs">
-              HodaHub Internet Private Limited,<br />
-              CIN: U51109KA2026PTC066107<br />
-              Telephone: 044-45614700 / 044-67415800<br />
-              Email: support@hodahub.com
-            </p>
           </div>
         </div>
       </div>
