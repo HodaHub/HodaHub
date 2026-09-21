@@ -78,7 +78,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       </div>
 
       {/* Product Image with aspect ratio and descriptive SEO alt */}
-      <div className="relative w-full aspect-square p-2.5 sm:p-4 bg-slate-50/50 flex items-center justify-center overflow-hidden border-b border-slate-100">
+      <div className="relative w-full aspect-square p-2 sm:p-4 bg-slate-50/50 flex items-center justify-center overflow-hidden border-b border-slate-100">
         <motion.img
           layoutId={`product-image-${product.id}`}
           src={product.images[0]}
@@ -98,22 +98,22 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       </div>
 
       {/* Product Information Body */}
-      <div className="p-2.5 sm:p-3.5 flex flex-col flex-1 min-w-0">
+      <div className="p-2 sm:p-3.5 flex flex-col flex-1 min-w-0">
         {/* Brand & HodaAssured Trust Badge */}
         <div className="flex items-center justify-between gap-1 mb-1">
-          <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider truncate">
+          <span className="text-[9px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider truncate">
             {product.brand}
           </span>
           {product.isAssured && <TrustBadge size="sm" />}
         </div>
 
         {/* 2-line title clamp */}
-        <h3 className="text-xs sm:text-sm font-semibold text-slate-900 line-clamp-2 leading-snug group-hover:text-primary-600 transition-colors mb-1.5 sm:mb-2 min-h-[2.25rem] sm:min-h-[2.5rem] break-words">
+        <h3 className="text-xs sm:text-sm font-semibold text-slate-900 line-clamp-2 leading-snug group-hover:text-primary-600 transition-colors mb-1 sm:mb-1.5 min-h-[2rem] sm:min-h-[2.5rem] break-words">
           {product.title}
         </h3>
 
         {/* Rating Pill + Review count */}
-        <div className="mb-2 flex items-center">
+        <div className="mb-1.5 sm:mb-2 flex items-center">
           <RatingBadge
             rating={product.rating}
             ratingCount={product.ratingCount}
@@ -132,21 +132,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           />
 
           {/* Delivery estimate */}
-          <div className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-500 font-medium">
+          <div className="mt-1 sm:mt-1.5 flex items-center gap-1 text-[10px] sm:text-[11px] text-slate-500 font-medium">
             <Zap className="w-3 h-3 text-emerald-600 fill-emerald-600 shrink-0" />
             <span className="truncate">Free delivery by <strong className="text-slate-700 font-semibold">{getDeliveryDateString(product.deliveryDays)}</strong></span>
           </div>
         </div>
 
-        {/* Add-to-Cart Button with minimum 44px touch height */}
-        <div className="mt-3 pt-2 border-t border-slate-100 flex items-center gap-2">
+        {/* Add-to-Cart Button with minimum touch height */}
+        <div className="mt-2.5 sm:mt-3 pt-2 border-t border-slate-100 flex items-center gap-2">
           <motion.button
             type="button"
             onClick={handleAddToCart}
             disabled={!product.inStock}
             whileTap={{ scale: 0.96 }}
             aria-label={`Add ${product.title} to Cart`}
-            className={`w-full min-h-[40px] sm:min-h-[44px] py-2 sm:py-2 px-2 sm:px-3 rounded-lg text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs focus:outline-none cursor-pointer ${
+            className={`w-full min-h-[36px] sm:min-h-[44px] py-1.5 sm:py-2 px-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs focus:outline-none cursor-pointer ${
               !product.inStock
                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                 : isAdded

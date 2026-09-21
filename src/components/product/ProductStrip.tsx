@@ -160,15 +160,15 @@ export const ProductStrip: React.FC<ProductStripProps> = ({
             </div>
           )}
 
-          {/* Scrollable Track: 1.2 cards visible on mobile, 2.5 on tablet, 4 on lg, 5 on xl */}
+          {/* Scrollable Track: 2+ cards visible on mobile, 3 on sm, 3.5 on md, 4.5 on lg, 5.5 on xl */}
           <div
             ref={scrollRef}
-            className="flex-1 min-w-0 w-full flex gap-3 sm:gap-3.5 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar scroll-smooth"
+            className="flex-1 min-w-0 w-full flex gap-2.5 sm:gap-3.5 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar scroll-smooth"
           >
             {products.map((product) => (
               <div
                 key={product.id}
-                className="w-[72vw] sm:w-[48%] md:w-[calc(100%/2.5-12px)] lg:w-[calc(100%/4-12px)] xl:w-[calc(100%/5-12px)] max-w-[280px] flex-shrink-0 snap-start min-w-0"
+                className="w-[44vw] xs:w-[42vw] sm:w-[32%] md:w-[calc(100%/3.5-12px)] lg:w-[calc(100%/4.5-12px)] xl:w-[calc(100%/5.5-12px)] min-w-[145px] max-w-[215px] flex-shrink-0 snap-start min-w-0"
               >
                 <ProductCard
                   product={product}
