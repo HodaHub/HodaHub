@@ -218,6 +218,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 )}
               </button>
 
+              {/* Firebase invisible reCAPTCHA anchor container */}
+              <div id="recaptcha-container"></div>
+
               <div className="pt-2 text-center">
                 <p className="text-[11px] text-slate-400">
                   By continuing, you agree to HodaHub's{' '}

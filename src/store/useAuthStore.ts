@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Address } from '../types';
 import { supabase, SupabaseProfile, SupabaseAddress } from '../lib/supabase';
+import { sendFirebaseOtp, verifyFirebaseOtp, isFirebaseConfigured } from '../lib/firebase';
 
 export interface AuthUser {
   _id: string; // matches auth.users.id
@@ -57,34 +58,41 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   closeAuthModal: () => set({ isAuthModalOpen: false, error: null }),
 
-  // Supabase & MSG91 Phone OTP: signInWithOtp({ phone: '+91XXXXXXXXXX' })
+  // Phone OTP: Firebase (10,000 free SMS/mo) / Fast2SMS / Supabase / Dev bypass
   sendOtp: async (phone: string) => {
     set({ isLoading: true, error: null });
     const cleanPhone = phone.replace(/\D/g, '').slice(-10);
     const fullPhone = `+91${cleanPhone}`;
 
-    // 1. Check if Fast2SMS or MSG91 keys are set in frontend environment
-    const fast2smsKey = import.meta.env.VITE_FAST2SMS_API_KEY as string | undefined;
-    const msg91Key = import.meta.env.VITE_MSG91_AUTH_KEY as string | undefined;
-    const msg91Template = import.meta.env.VITE_MSG91_TEMPLATE_ID as string | undefined;
-
-    if (fast2smsKey) {
-      try {
-        // Fast2SMS Edge function / direct call
-        await supabase.functions.invoke('fast2sms-send-sms-hook', {
-          body: { phone: cleanPhone, otp: Math.floor(100000 + Math.random() * 900000).toString() },
-        }).catch(() => null);
-      } catch (e) {
-        console.warn('Fast2SMS function notice:', e);
+    // 1. If Google Firebase is configured, dispatch real SMS via Firebase Phone Auth
+    if (isFirebaseConfigured()) {
+      const fbResult = await sendFirebaseOtp(fullPhone);
+      if (!fbResult.success) {
+        console.warn('Firebase Phone Auth notice (running hybrid/bypass mode):', fbResult.error);
       }
-    } else if (msg91Key && msg91Template) {
-      try {
-        await fetch(
-          `https://control.msg91.com/api/v5/otp?template_id=${encodeURIComponent(msg91Template)}&mobile=91${cleanPhone}&authkey=${encodeURIComponent(msg91Key)}`,
-          { method: 'POST', headers: { 'Content-Type': 'application/json' } }
-        );
-      } catch (e) {
-        console.warn('MSG91 direct OTP dispatch notice:', e);
+    } else {
+      // Fallback: Fast2SMS / MSG91
+      const fast2smsKey = import.meta.env.VITE_FAST2SMS_API_KEY as string | undefined;
+      const msg91Key = import.meta.env.VITE_MSG91_AUTH_KEY as string | undefined;
+      const msg91Template = import.meta.env.VITE_MSG91_TEMPLATE_ID as string | undefined;
+
+      if (fast2smsKey) {
+        try {
+          await supabase.functions.invoke('fast2sms-send-sms-hook', {
+            body: { phone: cleanPhone, otp: Math.floor(100000 + Math.random() * 900000).toString() },
+          }).catch(() => null);
+        } catch (e) {
+          console.warn('Fast2SMS function notice:', e);
+        }
+      } else if (msg91Key && msg91Template) {
+        try {
+          await fetch(
+            `https://control.msg91.com/api/v5/otp?template_id=${encodeURIComponent(msg91Template)}&mobile=91${cleanPhone}&authkey=${encodeURIComponent(msg91Key)}`,
+            { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+          );
+        } catch (e) {
+          console.warn('MSG91 direct OTP dispatch notice:', e);
+        }
       }
     }
 
@@ -107,7 +115,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  // Phone OTP Verification: Supports MSG91, Supabase verifyOtp, and universal bypass
+  // Phone OTP Verification: Supports Firebase, MSG91, Supabase verifyOtp, and universal dev bypass
   verifyOtp: async (otp: string) => {
     const { phone } = get();
     set({ isLoading: true, error: null });
@@ -117,9 +125,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     let isVerified = false;
 
-    // 1. If MSG91 key present, verify with MSG91
+    // 1. If Firebase configured, verify via Firebase Phone Auth
+    if (isFirebaseConfigured()) {
+      const fbVerify = await verifyFirebaseOtp(cleanOtp);
+      if (fbVerify.success) {
+        isVerified = true;
+      } else {
+        console.warn('Firebase verify notice:', fbVerify.error);
+      }
+    }
+
+    // 2. If MSG91 key present, verify with MSG91
     const msg91Key = import.meta.env.VITE_MSG91_AUTH_KEY as string | undefined;
-    if (msg91Key) {
+    if (!isVerified && msg91Key) {
       try {
         const res = await fetch(
           `https://control.msg91.com/api/v5/otp/verify?otp=${encodeURIComponent(cleanOtp)}&mobile=91${cleanPhone}&authkey=${encodeURIComponent(msg91Key)}`,
