@@ -201,6 +201,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                     className="flex-1 min-w-0 px-3 py-3 text-slate-900 font-mono font-medium text-base focus:outline-none rounded-r-xl"
                   />
                 </div>
+                <p className="text-[11px] text-emerald-600 font-medium mt-1.5 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Instant OTP will be sent to your WhatsApp
+                </p>
               </div>
 
               <button
@@ -212,14 +216,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 ) : (
                   <>
-                    <span>Send Verification Code</span>
+                    <span>Send WhatsApp Verification Code</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
-
-              {/* Firebase invisible reCAPTCHA anchor container */}
-              <div id="recaptcha-container"></div>
 
               <div className="pt-2 text-center">
                 <p className="text-[11px] text-slate-400">
@@ -234,7 +235,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    Enter 6-Digit Code
+                    Enter 6-Digit WhatsApp Code
                   </label>
                   <button
                     onClick={() => {

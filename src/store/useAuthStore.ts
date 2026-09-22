@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Address } from '../types';
 import { supabase, SupabaseProfile, SupabaseAddress } from '../lib/supabase';
-import { sendFirebaseOtp, verifyFirebaseOtp, isFirebaseConfigured } from '../lib/firebase';
+import { sendWhatsAppOtp, verifyWhatsAppOtp } from '../lib/whatsappOtp';
 
 export interface AuthUser {
   _id: string; // matches auth.users.id
@@ -25,7 +25,7 @@ interface AuthState {
   openAuthModal: (redirectPath?: string) => void;
   closeAuthModal: () => void;
 
-  // Supabase Phone OTP flow
+  // Phone OTP flow
   sendOtp: (phone: string) => Promise<boolean>;
   verifyOtp: (otp: string) => Promise<boolean>;
   resendOtp: () => Promise<boolean>;
@@ -58,42 +58,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   closeAuthModal: () => set({ isAuthModalOpen: false, error: null }),
 
-  // Phone OTP: Firebase (10,000 free SMS/mo) / Fast2SMS / Supabase / Dev bypass
+  // Phone OTP: WhatsApp Gateway (Zero DLT / Zero Cost) + Dev bypass
   sendOtp: async (phone: string) => {
     set({ isLoading: true, error: null });
     const cleanPhone = phone.replace(/\D/g, '').slice(-10);
     const fullPhone = `+91${cleanPhone}`;
 
-    // 1. If Google Firebase is configured, dispatch real SMS via Firebase Phone Auth
-    if (isFirebaseConfigured()) {
-      const fbResult = await sendFirebaseOtp(fullPhone);
-      if (!fbResult.success) {
-        console.warn('Firebase Phone Auth notice (running hybrid/bypass mode):', fbResult.error);
+    // 1. Dispatch OTP via WhatsApp Gateway
+    try {
+      const waResult = await sendWhatsAppOtp(cleanPhone);
+      if (!waResult.success) {
+        console.warn('WhatsApp gateway notice (dev bypass available):', waResult.error);
       }
-    } else {
-      // Fallback: Fast2SMS / MSG91
-      const fast2smsKey = import.meta.env.VITE_FAST2SMS_API_KEY as string | undefined;
-      const msg91Key = import.meta.env.VITE_MSG91_AUTH_KEY as string | undefined;
-      const msg91Template = import.meta.env.VITE_MSG91_TEMPLATE_ID as string | undefined;
-
-      if (fast2smsKey) {
-        try {
-          await supabase.functions.invoke('fast2sms-send-sms-hook', {
-            body: { phone: cleanPhone, otp: Math.floor(100000 + Math.random() * 900000).toString() },
-          }).catch(() => null);
-        } catch (e) {
-          console.warn('Fast2SMS function notice:', e);
-        }
-      } else if (msg91Key && msg91Template) {
-        try {
-          await fetch(
-            `https://control.msg91.com/api/v5/otp?template_id=${encodeURIComponent(msg91Template)}&mobile=91${cleanPhone}&authkey=${encodeURIComponent(msg91Key)}`,
-            { method: 'POST', headers: { 'Content-Type': 'application/json' } }
-          );
-        } catch (e) {
-          console.warn('MSG91 direct OTP dispatch notice:', e);
-        }
-      }
+    } catch (e) {
+      console.warn('WhatsApp dispatch warning:', e);
     }
 
     // 2. Also dispatch via Supabase phone auth
@@ -103,19 +81,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
 
       if (error) {
-        console.warn('Supabase signInWithOtp notice (running hybrid mode):', error.message);
+        console.warn('Supabase signInWithOtp notice (running dev mode):', error.message);
       }
 
       set({ phone: cleanPhone, isLoading: false });
       return true;
     } catch (err: any) {
-      console.warn('sendOtp hybrid mode active:', err.message);
+      console.warn('sendOtp active in dev mode:', err.message);
       set({ phone: cleanPhone, isLoading: false, error: null });
       return true;
     }
   },
 
-  // Phone OTP Verification: Supports Firebase, MSG91, Supabase verifyOtp, and universal dev bypass
+  // Phone OTP Verification: Supports WhatsApp Gateway, Supabase verifyOtp and dev bypass
   verifyOtp: async (otp: string) => {
     const { phone } = get();
     set({ isLoading: true, error: null });
@@ -125,31 +103,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     let isVerified = false;
 
-    // 1. If Firebase configured, verify via Firebase Phone Auth
-    if (isFirebaseConfigured()) {
-      const fbVerify = await verifyFirebaseOtp(cleanOtp);
-      if (fbVerify.success) {
+    // 1. Verify via WhatsApp Gateway session
+    try {
+      const waVerify = await verifyWhatsAppOtp(cleanPhone, cleanOtp);
+      if (waVerify.success) {
         isVerified = true;
-      } else {
-        console.warn('Firebase verify notice:', fbVerify.error);
       }
+    } catch (e) {
+      console.warn('WhatsApp verify notice:', e);
     }
 
-    // 2. If MSG91 key present, verify with MSG91
-    const msg91Key = import.meta.env.VITE_MSG91_AUTH_KEY as string | undefined;
-    if (!isVerified && msg91Key) {
-      try {
-        const res = await fetch(
-          `https://control.msg91.com/api/v5/otp/verify?otp=${encodeURIComponent(cleanOtp)}&mobile=91${cleanPhone}&authkey=${encodeURIComponent(msg91Key)}`,
-          { method: 'GET' }
-        );
-        const json = await res.json();
-        if (json.type === 'success' || json.message?.toLowerCase().includes('verified')) {
-          isVerified = true;
-        }
-      } catch (e) {
-        console.warn('MSG91 verify check notice:', e);
-      }
+    // Dev bypass
+    if (cleanOtp === '123456') {
+      isVerified = true;
     }
 
     try {
