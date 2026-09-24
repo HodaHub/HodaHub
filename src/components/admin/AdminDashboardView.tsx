@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Check,
   ExternalLink,
+  Sparkles,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -626,6 +627,20 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                 <div>
                   <div className="text-xs font-semibold text-slate-900">Manage Catalog</div>
                   <div className="text-[10px] text-slate-400">Add or edit products & inventory</div>
+                </div>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+
+            <button
+              onClick={() => onNavigateTab('scraper')}
+              className="w-full flex items-center justify-between p-2.5 rounded-lg border border-slate-200/70 hover:border-primary-400 hover:bg-primary-50/50 transition-all text-left cursor-pointer group"
+            >
+              <div className="flex items-center gap-2.5">
+                <Sparkles className="w-4 h-4 text-primary-600" />
+                <div>
+                  <div className="text-xs font-semibold text-slate-900">Auto Product Scraper</div>
+                  <div className="text-[10px] text-slate-400">Scrape sites & sync directly to catalog</div>
                 </div>
               </div>
               <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />

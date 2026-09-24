@@ -17,6 +17,7 @@ import {
   FolderTree,
   Sliders,
   MessageSquare,
+  Sparkles,
 } from 'lucide-react';
 import { useAdminAuthStore } from '../../store/useAdminAuthStore';
 import { SEO } from '../common/SEO';
@@ -25,6 +26,7 @@ import { checkWhatsAppGateway, WhatsAppGatewayStatus } from '../../lib/whatsappO
 export type AdminTab =
   | 'dashboard'
   | 'products'
+  | 'scraper'
   | 'categories'
   | 'banners'
   | 'boxes'
@@ -72,6 +74,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const navItems: Array<{ id: AdminTab; label: string; icon: React.FC<{ className?: string }> }> = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'products', label: 'Products', icon: Package },
+    { id: 'scraper', label: 'Auto Scraper', icon: Sparkles },
     { id: 'categories', label: 'Categories', icon: FolderTree },
     { id: 'banners', label: 'Banners', icon: Sliders },
     { id: 'boxes', label: 'Box Options', icon: Gift },

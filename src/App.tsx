@@ -31,6 +31,7 @@ const AdminCouponsView = lazy(() => import('./components/admin/AdminCouponsView'
 const AdminCustomersView = lazy(() => import('./components/admin/AdminCustomersView').then((m) => ({ default: m.AdminCustomersView })));
 const AdminSettingsView = lazy(() => import('./components/admin/AdminSettingsView').then((m) => ({ default: m.AdminSettingsView })));
 const AdminBoxOptionsView = lazy(() => import('./components/admin/AdminBoxOptionsView').then((m) => ({ default: m.AdminBoxOptionsView })));
+const AdminScraperView = lazy(() => import('./components/admin/AdminScraperView').then((m) => ({ default: m.AdminScraperView })));
 
 // Content Pages (Lazy loaded)
 const ContactUsPage = lazy(() => import('./pages/content/ContactUsPage').then((m) => ({ default: m.ContactUsPage })));
@@ -135,6 +136,7 @@ export function App() {
         let tab: AdminTab = 'dashboard';
         if (pathname === '/admin/orders' || pathname === '/admin-orders') tab = 'orders';
         else if (pathname === '/admin/products') tab = 'products';
+        else if (pathname === '/admin/scraper' || pathname === '/admin/automation') tab = 'scraper';
         else if (pathname === '/admin/categories') tab = 'categories';
         else if (pathname === '/admin/banners') tab = 'banners';
         else if (pathname === '/admin/reviews') tab = 'reviews';
@@ -337,6 +339,7 @@ export function App() {
         >
           {adminTab === 'dashboard' && <AdminDashboardView onNavigateTab={handleSelectAdminTab} />}
           {adminTab === 'products' && <AdminProductsView />}
+          {adminTab === 'scraper' && <AdminScraperView onNavigateTab={handleSelectAdminTab} />}
           {adminTab === 'categories' && <AdminCategoriesView />}
           {adminTab === 'banners' && <AdminBannersView />}
           {adminTab === 'boxes' && <AdminBoxOptionsView />}
