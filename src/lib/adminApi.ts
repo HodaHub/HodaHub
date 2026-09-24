@@ -257,7 +257,7 @@ export const adminApi = {
 
       const { data, error } = await query;
 
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         return data.map((o: any) => ({
           _id: o.id,
           orderId: o.id,
@@ -290,12 +290,12 @@ export const adminApi = {
           paymentStatus: o.payment_status,
           orderStatus: o.order_status,
           pricing: {
-            subtotal: Number(o.subtotal),
-            discount: Number(o.discount),
+            subtotal: Number(o.subtotal || 0),
+            discount: Number(o.discount || 0),
             couponDiscount: 0,
             deliveryFee: 0,
             tax: 0,
-            total: Number(o.total),
+            total: Number(o.total || o.total_amount || 0),
           },
           estimatedDeliveryDate: o.estimated_delivery_date,
           awbNumber: o.awb_number,
@@ -306,10 +306,10 @@ export const adminApi = {
         })) as AdminOrder[];
       }
     } catch (err) {
-      console.warn('Postgres getOrders query notice, using local records:', err);
+      console.warn('Postgres getOrders query notice:', err);
     }
 
-    // Fallback filter over local mock
+    // Fallback only if database call errors
     let filtered = [...mockOrders];
     if (params.status && params.status !== 'ALL') {
       filtered = filtered.filter((o) => o.orderStatus === params.status);
@@ -1298,97 +1298,179 @@ export const adminApi = {
         .from('reviews')
         .select(`
           *,
-          products (id, title, sku)
+          products (id, title, sku, images, thumbnail, product_images(url))
         `)
         .order('created_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
-        return data.map((r: any) => ({
-          _id: r.id,
-          user: { _id: r.user_id || 'guest', name: 'Verified Customer' },
-          product: { _id: r.product_id, title: r.products?.title || 'Product', sku: r.products?.sku || 'SKU' },
-          productTitle: r.products?.title || 'Product',
-          productImage: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80',
-          title: r.headline || 'Product Review',
-          userName: 'Shopper',
-          userEmail: 'shopper@hodahub.in',
-          rating: r.rating,
-          comment: r.comment,
-          verifiedPurchase: r.is_verified_buyer ?? true,
-          status: r.is_approved ? 'approved' : 'pending',
-          createdAt: r.created_at,
-        }));
+      if (!error && data) {
+        return data.map((r: any) => {
+          let author = 'Verified Customer';
+          let title = 'Customer Review';
+          let commentText = r.comment || '';
+          let location = 'India';
+
+          try {
+            const parsed = JSON.parse(r.comment);
+            if (typeof parsed === 'object' && parsed !== null) {
+              author = parsed.author || author;
+              title = parsed.title || title;
+              commentText = parsed.comment || commentText;
+              location = parsed.location || location;
+            }
+          } catch (_) {}
+
+          const prodImg =
+            r.products?.product_images?.[0]?.url ||
+            r.products?.thumbnail ||
+            (Array.isArray(r.products?.images) ? r.products.images[0] : null) ||
+            'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
+
+          return {
+            _id: r.id,
+            user: { _id: r.user_id || 'guest', name: author },
+            product: {
+              _id: r.product_id,
+              title: r.products?.title || 'Product',
+              sku: r.products?.sku || 'SKU',
+              image: prodImg,
+            },
+            productTitle: r.products?.title || 'Product',
+            productImage: prodImg,
+            title: title,
+            userName: author,
+            userEmail: location,
+            rating: r.rating,
+            comment: commentText,
+            verifiedPurchase: r.verified_purchase ?? true,
+            status: (r.status as 'pending' | 'approved' | 'rejected') || 'approved',
+            createdAt: r.created_at,
+          };
+        });
       }
     } catch (err) {
       console.warn('Postgres getReviews notice:', err);
     }
 
-    return [
-      {
-        _id: 'rev-001',
-        user: {
-          _id: 'u-101',
-          name: 'Rohit Verma',
-        },
-        product: {
-          _id: 'a1000000-0000-0000-0000-000000000001',
-          title: 'Sony WH-1000XM5 Wireless Headphones',
-          sku: 'HODA-SNY-XM5-BLK',
-          image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80',
-        },
-        productTitle: 'Sony WH-1000XM5 Wireless Headphones',
-        productImage: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80',
-        title: 'Outstanding Sound Quality & ANC',
-        userName: 'Rohit Verma',
-        userEmail: 'rohit.verma@example.com',
-        rating: 5,
-        comment:
-          'Hands down the best active noise cancellation. Battery backup is insane. Delivered in 24 hours in Bangalore!',
-        verifiedPurchase: true,
-        status: 'approved',
-        createdAt: '2026-09-08T10:15:00.000Z',
+    return [];
+  },
+
+  async createReview(data: {
+    productId: string;
+    reviewerName: string;
+    rating: number;
+    title?: string;
+    comment: string;
+    verifiedPurchase?: boolean;
+    status?: 'approved' | 'pending';
+    location?: string;
+    createdAt?: string;
+  }): Promise<AdminReview> {
+    // 1. Resolve a valid user_id from profiles or auth session
+    let userId = '0f63c6ae-b0f4-4583-ad4b-8a21ef57c42d'; // default fallback ID
+    try {
+      const { data: profs } = await supabase.from('profiles').select('id').limit(1);
+      if (profs && profs.length > 0 && profs[0]?.id) {
+        userId = profs[0].id;
+      }
+    } catch (_) {}
+
+    // 2. Format structured comment payload
+    const structuredComment = JSON.stringify({
+      author: data.reviewerName.trim(),
+      title: (data.title || 'Product Review').trim(),
+      comment: data.comment.trim(),
+      location: (data.location || 'Verified Buyer, India').trim(),
+    });
+
+    const insertPayload = {
+      product_id: data.productId,
+      user_id: userId,
+      rating: Math.min(5, Math.max(1, Math.round(data.rating))),
+      comment: structuredComment,
+      status: data.status || 'approved',
+      verified_purchase: data.verifiedPurchase ?? true,
+      created_at: data.createdAt || new Date().toISOString(),
+    };
+
+    const { data: inserted, error } = await supabase
+      .from('reviews')
+      .insert(insertPayload)
+      .select(`
+        *,
+        products (id, title, sku, images, thumbnail, product_images(url))
+      `)
+      .single();
+
+    if (error || !inserted) {
+      throw new Error(error?.message || 'Failed to publish review to database');
+    }
+
+    const prodImg =
+      inserted.products?.product_images?.[0]?.url ||
+      inserted.products?.thumbnail ||
+      (Array.isArray(inserted.products?.images) ? inserted.products.images[0] : null) ||
+      'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80';
+
+    return {
+      _id: inserted.id,
+      user: { _id: inserted.user_id, name: data.reviewerName },
+      product: {
+        _id: inserted.product_id,
+        title: inserted.products?.title || 'Product',
+        sku: inserted.products?.sku || 'SKU',
+        image: prodImg,
       },
-      {
-        _id: 'rev-002',
-        user: {
-          _id: 'u-102',
-          name: 'Priya Sharma',
-        },
-        product: {
-          _id: 'prod-002',
-          title: 'Apple Watch Series 9 GPS 45mm',
-          sku: 'HODA-APL-W9-45M',
-          image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80',
-        },
-        productTitle: 'Apple Watch Series 9 GPS 45mm',
-        productImage: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80',
-        title: 'Premium Finish & Seamless Sync',
-        userName: 'Priya Sharma',
-        userEmail: 'priya.sharma@example.com',
-        rating: 5,
-        comment:
-          'Packaging was extraordinary. Received in the HodaHub signature wooden gift box. Display is super bright.',
-        verifiedPurchase: true,
-        status: 'pending',
-        createdAt: '2026-09-09T18:40:00.000Z',
-      },
-    ];
+      productTitle: inserted.products?.title || 'Product',
+      productImage: prodImg,
+      title: data.title || 'Product Review',
+      userName: data.reviewerName,
+      userEmail: data.location || 'India',
+      rating: inserted.rating,
+      comment: data.comment,
+      verifiedPurchase: inserted.verified_purchase,
+      status: inserted.status,
+      createdAt: inserted.created_at,
+    };
   },
 
   async approveReview(id: string) {
     try {
-      await supabase.from('reviews').update({ is_approved: true }).eq('id', id);
+      const { error } = await supabase
+        .from('reviews')
+        .update({ status: 'approved' })
+        .eq('id', id);
+      if (error) throw error;
     } catch (err) {
       console.warn('Postgres approveReview notice:', err);
+      throw err;
     }
     return true;
   },
 
   async rejectReview(id: string) {
     try {
-      await supabase.from('reviews').delete().eq('id', id);
+      const { error } = await supabase
+        .from('reviews')
+        .update({ status: 'rejected' })
+        .eq('id', id);
+      if (error) throw error;
     } catch (err) {
       console.warn('Postgres rejectReview notice:', err);
+      throw err;
+    }
+    return true;
+  },
+
+  async deleteReview(id: string) {
+    try {
+      const { error } = await supabase
+        .from('reviews')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+    } catch (err) {
+      console.warn('Postgres deleteReview notice:', err);
+      throw err;
     }
     return true;
   },

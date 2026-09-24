@@ -42,30 +42,34 @@ interface AdminDashboardViewProps {
 
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNavigateTab }) => {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [customerCount, setCustomerCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'7d' | '30d'>('7d');
   const [liveVisitorsCount, setLiveVisitorsCount] = useState<number>(1);
   const [livePaths, setLivePaths] = useState<string[]>([]);
   const [visitStats, setVisitStats] = useState<HistoricalVisitStats>({
-    today: { pageViews: 142, uniqueVisitors: 48 },
-    thisWeek: { pageViews: 1184, uniqueVisitors: 395 },
-    thisMonth: { pageViews: 4890, uniqueVisitors: 1620 },
-    topPages: [
-      { path: '/', count: 820 },
-      { path: '/category/mobiles', count: 410 },
-      { path: '/category/electronics', count: 320 },
-    ],
+    today: { pageViews: 0, uniqueVisitors: 0 },
+    thisWeek: { pageViews: 0, uniqueVisitors: 0 },
+    thisMonth: { pageViews: 0, uniqueVisitors: 0 },
+    topPages: [],
   });
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const orderList = await adminApi.getOrders();
-      setOrders(orderList);
-      const stats = await getHistoricalVisitStats();
+      const [orderList, productList, customerList, stats] = await Promise.all([
+        adminApi.getOrders(),
+        adminApi.getProducts(),
+        adminApi.getCustomers(),
+        getHistoricalVisitStats(),
+      ]);
+      setOrders(orderList || []);
+      setProducts(productList || []);
+      setCustomerCount(customerList?.length || 0);
       setVisitStats(stats);
     } catch (err) {
-      console.error('Failed to load dashboard orders:', err);
+      console.error('Failed to load dashboard telemetry:', err);
     } finally {
       setLoading(false);
     }
@@ -85,21 +89,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
     };
   }, []);
 
-  // Metrics calculations
-  const totalRevenue = orders.reduce((sum, o) => sum + (o.pricing?.total || 0), 0);
+  // Real-time metrics calculations (Directly computed from Supabase tables)
+  const totalRevenue = orders.reduce((sum, o) => sum + (Number(o.pricing?.total) || 0), 0);
+  
   const todayOrders = orders.filter((o) => {
+    if (!o.createdAt) return false;
     const d = new Date(o.createdAt);
     const today = new Date();
     return d.toDateString() === today.toDateString();
-  }).length || orders.length; // fallback to count if dates are mock
+  }).length;
 
   const pendingShipments = orders.filter(
     (o) => !o.estimatedDeliveryDate || o.orderStatus === 'delivery_date_pending'
   ).length;
 
-  const lowStockCount = PRODUCTS.filter((p) => (p.stockCount ?? 15) < 10).length;
+  const lowStockCount = products.filter((p) => Number(p.stockCount ?? p.stock ?? 0) < 10).length;
 
-  // Chart data: generate realistic 7d or 30d revenue metrics
+  // Chart data: Group REAL orders by calendar day for 7d or 30d
   const daysCount = timeRange === '7d' ? 7 : 30;
   const chartData = Array.from({ length: daysCount }).map((_, idx) => {
     const day = new Date();
@@ -109,15 +115,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
       month: daysCount > 10 ? 'numeric' : 'short',
     });
 
-    // Base calculation from orders or synthetic distribution
-    const daySeed = (idx * 17 + 31) % 43;
-    const baseRevenue = 45000 + daySeed * 3800;
-    const orderCount = Math.floor(baseRevenue / 18500) + 1;
+    const dayOrders = orders.filter((o) => {
+      if (!o.createdAt) return false;
+      const od = new Date(o.createdAt);
+      return od.toDateString() === day.toDateString();
+    });
+
+    const dayRevenue = dayOrders.reduce((sum, o) => sum + (Number(o.pricing?.total) || 0), 0);
+    const dayCount = dayOrders.length;
 
     return {
       date: label,
-      revenue: baseRevenue,
-      orders: orderCount,
+      revenue: dayRevenue,
+      orders: dayCount,
     };
   });
 
@@ -248,60 +258,58 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
         </div>
       </div>
 
-      {/* 1. KEY PERFORMANCE INDICATORS (KPIs) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 1. KEY PERFORMANCE INDICATORS (KPIs) - Live Telemetry from Supabase */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {/* KPI 1: Today's Orders */}
-        <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-xs hover:border-primary-300 transition-colors">
+        <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-xs hover:border-primary-300 transition-colors">
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider font-mono">Today's Orders</span>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <ShoppingBag className="w-4 h-4" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider font-mono">Today's Orders</span>
+            <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+              <ShoppingBag className="w-3.5 h-3.5" />
             </div>
           </div>
           <div className="text-2xl font-black text-slate-900 font-mono">
             {todayOrders}
           </div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>+14.2% vs yesterday</span>
+          <div className="mt-2 text-[11px] text-slate-500 font-medium truncate">
+            {orders.length} total store orders
           </div>
         </div>
 
         {/* KPI 2: Total Revenue */}
-        <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-xs hover:border-primary-300 transition-colors">
+        <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-xs hover:border-primary-300 transition-colors">
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider font-mono">Total Revenue</span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider font-mono">Total Revenue</span>
+            <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <TrendingUp className="w-3.5 h-3.5" />
             </div>
           </div>
           <div className="text-2xl font-black text-slate-900 font-mono">
-            {formatPrice(totalRevenue || 284390)}
+            {formatPrice(totalRevenue)}
           </div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
-            <span className="text-emerald-600 font-semibold">+18.5%</span>
-            <span>across all payment channels</span>
+          <div className="mt-2 text-[11px] text-slate-500 font-medium truncate">
+            {orders.filter((o) => o.paymentStatus === 'completed').length} paid transactions
           </div>
         </div>
 
         {/* KPI 3: Pending Shipments */}
         <div
           onClick={() => onNavigateTab('orders')}
-          className="bg-white border border-amber-200/80 rounded-xl p-5 shadow-xs hover:border-amber-400 transition-all cursor-pointer group"
+          className="bg-white border border-amber-200/80 rounded-xl p-4 shadow-xs hover:border-amber-400 transition-all cursor-pointer group"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider font-mono text-amber-900">
+            <span className="text-[11px] font-semibold uppercase tracking-wider font-mono text-amber-900">
               Pending Shipments
             </span>
-            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <Clock className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <Clock className="w-3.5 h-3.5" />
             </div>
           </div>
           <div className="text-2xl font-black text-amber-950 font-mono">
             {pendingShipments}
           </div>
-          <div className="mt-2 flex items-center gap-1 text-xs text-amber-700 font-medium">
-            <span>Awaiting delivery date setting</span>
+          <div className="mt-2 flex items-center gap-1 text-[11px] text-amber-700 font-medium">
+            <span>Awaiting dispatch</span>
             <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
           </div>
         </div>
@@ -309,21 +317,65 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
         {/* KPI 4: Low-Stock Alerts */}
         <div
           onClick={() => onNavigateTab('products')}
-          className="bg-white border border-rose-200/80 rounded-xl p-5 shadow-xs hover:border-rose-400 transition-all cursor-pointer group"
+          className="bg-white border border-rose-200/80 rounded-xl p-4 shadow-xs hover:border-rose-400 transition-all cursor-pointer group"
         >
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider font-mono text-rose-900">
+            <span className="text-[11px] font-semibold uppercase tracking-wider font-mono text-rose-900">
               Low-Stock Alerts
             </span>
-            <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <AlertTriangle className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <AlertTriangle className="w-3.5 h-3.5" />
             </div>
           </div>
           <div className="text-2xl font-black text-rose-950 font-mono">
-            {lowStockCount || 3}
+            {lowStockCount}
           </div>
-          <div className="mt-2 flex items-center gap-1 text-xs text-rose-700 font-medium">
-            <span>SKUs with &lt; 10 units in warehouse</span>
+          <div className="mt-2 flex items-center gap-1 text-[11px] text-rose-700 font-medium">
+            <span>SKUs &lt; 10 units</span>
+            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </div>
+
+        {/* KPI 5: Active Products */}
+        <div
+          onClick={() => onNavigateTab('products')}
+          className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-xs hover:border-indigo-300 transition-all cursor-pointer group"
+        >
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider font-mono text-indigo-900">
+              Catalog Items
+            </span>
+            <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <Package className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-black text-indigo-950 font-mono">
+            {products.length}
+          </div>
+          <div className="mt-2 flex items-center gap-1 text-[11px] text-indigo-700 font-medium">
+            <span>Active SKUs in store</span>
+            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </div>
+
+        {/* KPI 6: Registered Customers */}
+        <div
+          onClick={() => onNavigateTab('customers')}
+          className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-xs hover:border-purple-300 transition-all cursor-pointer group"
+        >
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider font-mono text-purple-900">
+              Customers
+            </span>
+            <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <Users className="w-3.5 h-3.5" />
+            </div>
+          </div>
+          <div className="text-2xl font-black text-purple-950 font-mono">
+            {customerCount}
+          </div>
+          <div className="mt-2 flex items-center gap-1 text-[11px] text-purple-700 font-medium">
+            <span>Verified accounts</span>
             <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
           </div>
         </div>
@@ -333,7 +385,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
       <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-bold text-slate-900">Revenue & Order Trajectory</h3>
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span>Revenue & Order Trajectory</span>
+              <span className="text-[10px] font-mono px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200">
+                Live Supabase Feed
+              </span>
+            </h3>
             <p className="text-xs text-slate-500">Gross merchandizing value across HodaHub fulfillment</p>
           </div>
           <div className="flex items-center bg-slate-100 p-1 rounded-lg">
@@ -382,7 +439,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                 tickLine={false}
                 stroke="#94a3b8"
                 fontSize={11}
-                tickFormatter={(val) => `₹${(val / 1000).toFixed(0)}k`}
+                tickFormatter={(val) => (val >= 1000 ? `₹${(val / 1000).toFixed(0)}k` : `₹${val}`)}
               />
               <Tooltip
                 content={({ active, payload, label }) => {

@@ -19,7 +19,8 @@ import {
 } from 'lucide-react';
 import { ReplacementPolicyModal } from '../components/product/ReplacementPolicyModal';
 import { BoxUpgradeModal } from '../components/product/BoxUpgradeModal';
-import { Product, BoxOption } from '../types';
+import { Product, BoxOption, ProductReview } from '../types';
+import { supabase } from '../lib/supabase';
 import { useCartStore } from '../store/useCartStore';
 import { useWishlistStore } from '../store/useWishlistStore';
 import { RatingBadge } from '../components/common/RatingBadge';
@@ -71,6 +72,68 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
       isMounted = false;
     };
   }, []);
+
+  // Live Supabase Reviews for this product
+  const [reviewsList, setReviewsList] = useState<ProductReview[]>(product.reviews || []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchReviews = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('reviews')
+          .select('*')
+          .eq('product_id', product.id)
+          .eq('status', 'approved')
+          .order('created_at', { ascending: false });
+
+        if (!error && data && data.length > 0 && isMounted) {
+          const mapped: ProductReview[] = data.map((r: any) => {
+            let author = 'Verified Buyer';
+            let title = 'Customer Review';
+            let commentText = r.comment || '';
+            let location = 'India';
+
+            try {
+              const parsed = JSON.parse(r.comment);
+              if (typeof parsed === 'object' && parsed !== null) {
+                author = parsed.author || author;
+                title = parsed.title || title;
+                commentText = parsed.comment || commentText;
+                location = parsed.location || location;
+              }
+            } catch (_) {}
+
+            return {
+              id: r.id,
+              author,
+              rating: r.rating,
+              title,
+              comment: commentText,
+              date: new Date(r.created_at).toLocaleDateString('en-IN', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              }),
+              verifiedBuyer: r.verified_purchase ?? true,
+              likes: 12,
+              location,
+            };
+          });
+          setReviewsList(mapped);
+        } else if (isMounted && product.reviews) {
+          setReviewsList(product.reviews);
+        }
+      } catch (err) {
+        console.warn('Could not load reviews for product:', err);
+      }
+    };
+
+    fetchReviews();
+    return () => {
+      isMounted = false;
+    };
+  }, [product.id, product.reviews]);
 
   const addItem = useCartStore((state) => state.addItem);
   const cartItems = useCartStore((state) => state.items);
@@ -581,7 +644,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                 : 'border-transparent hover:text-slate-950'
               }`}
           >
-            Ratings & Reviews ({product.reviews?.length || 0})
+            Ratings & Reviews ({reviewsList.length > 0 ? reviewsList.length : (product.reviews?.length || 0)})
           </button>
           <button
             onClick={() => setActiveTab('faq')}
@@ -619,80 +682,93 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
         {activeTab === 'reviews' && (
           <div className="p-6 space-y-6">
             {/* Rating Summary Breakdown */}
-            <div className="flex flex-col md:flex-row items-center gap-8 pb-6 border-b border-slate-100">
-              <div className="text-center md:text-left">
-                <div className="text-4xl font-extrabold text-slate-950 font-mono">
-                  {product.rating.toFixed(1)}
-                  <span className="text-lg text-slate-400"> / 5</span>
-                </div>
-                <div className="mt-1">
-                  <RatingBadge rating={product.rating} size="md" />
-                </div>
-                <p className="text-xs text-slate-500 mt-2 font-medium">
-                  {product.ratingCount} verified ratings & {product.reviewCount} reviews
-                </p>
-              </div>
+            {(() => {
+              const displayList = reviewsList.length > 0 ? reviewsList : (product.reviews || []);
+              const currentRating = displayList.length > 0
+                ? Number((displayList.reduce((acc, r) => acc + r.rating, 0) / displayList.length).toFixed(1))
+                : product.rating;
+              const totalReviewCount = displayList.length > 0 ? displayList.length : (product.reviewCount || 0);
 
-              {/* Distribution bars */}
-              <div className="flex-1 w-full max-w-md space-y-1.5 text-xs">
-                {[
-                  { star: 5, pct: 72 },
-                  { star: 4, pct: 18 },
-                  { star: 3, pct: 6 },
-                  { star: 2, pct: 2 },
-                  { star: 1, pct: 2 },
-                ].map((row) => (
-                  <div key={row.star} className="flex items-center gap-2">
-                    <span className="w-6 font-mono text-slate-500">{row.star}★</span>
-                    <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-500 rounded-full"
-                        style={{ width: `${row.pct}%` }}
-                      />
-                    </div>
-                    <span className="w-8 font-mono text-slate-400 text-right">{row.pct}%</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Individual Reviews */}
-            <div className="space-y-4">
-              {product.reviews && product.reviews.length > 0 ? (
-                product.reviews.map((rev) => (
-                  <div key={rev.id} className="p-4 rounded-lg bg-slate-50/70 border border-slate-100 text-xs">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <RatingBadge rating={rev.rating} size="sm" />
-                        <span className="font-extrabold text-slate-900">{rev.title}</span>
+              return (
+                <>
+                  <div className="flex flex-col md:flex-row items-center gap-8 pb-6 border-b border-slate-100">
+                    <div className="text-center md:text-left">
+                      <div className="text-4xl font-extrabold text-slate-950 font-mono">
+                        {currentRating.toFixed(1)}
+                        <span className="text-lg text-slate-400"> / 5</span>
                       </div>
-                      <span className="text-slate-400 font-mono text-[11px]">{rev.date}</span>
+                      <div className="mt-1">
+                        <RatingBadge rating={currentRating} size="md" />
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2 font-medium">
+                        {totalReviewCount} customer feedback & ratings
+                      </p>
                     </div>
 
-                    <p className="text-slate-700 leading-relaxed my-2">{rev.comment}</p>
+                    {/* Distribution bars */}
+                    <div className="flex-1 w-full max-w-md space-y-1.5 text-xs">
+                      {[5, 4, 3, 2, 1].map((star) => {
+                        const count = displayList.filter((r) => Math.round(r.rating) === star).length;
+                        const pct = displayList.length > 0
+                          ? Math.round((count / displayList.length) * 100)
+                          : star === 5 ? 72 : star === 4 ? 18 : 5;
 
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/50">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-800">{rev.author}</span>
-                        {rev.verifiedBuyer && (
-                          <span className="flex items-center gap-0.5 text-emerald-700 font-medium">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            <span>Verified Buyer, {rev.location}</span>
-                          </span>
-                        )}
-                      </div>
-
-                      <button className="flex items-center gap-1 hover:text-primary-600 transition-colors">
-                        <ThumbsUp className="w-3 h-3" />
-                        <span>Helpful ({rev.likes})</span>
-                      </button>
+                        return (
+                          <div key={star} className="flex items-center gap-2">
+                            <span className="w-6 font-mono text-slate-500">{star}★</span>
+                            <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-emerald-500 rounded-full transition-all"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className="w-8 font-mono text-slate-400 text-right">{pct}%</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                ))
-              ) : (
-                <p className="text-xs text-slate-500">No written reviews yet for this SKU.</p>
-              )}
-            </div>
+
+                  {/* Individual Reviews */}
+                  <div className="space-y-4">
+                    {displayList.length > 0 ? (
+                      displayList.map((rev) => (
+                        <div key={rev.id} className="p-4 rounded-lg bg-slate-50/70 border border-slate-100 text-xs">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <RatingBadge rating={rev.rating} size="sm" />
+                              <span className="font-extrabold text-slate-900">{rev.title}</span>
+                            </div>
+                            <span className="text-slate-400 font-mono text-[11px]">{rev.date}</span>
+                          </div>
+
+                          <p className="text-slate-700 leading-relaxed my-2">{rev.comment}</p>
+
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/50">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-800">{rev.author}</span>
+                              {rev.verifiedBuyer && (
+                                <span className="flex items-center gap-0.5 text-emerald-700 font-medium">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  <span>Verified Buyer, {rev.location}</span>
+                                </span>
+                              )}
+                            </div>
+
+                            <button className="flex items-center gap-1 hover:text-primary-600 transition-colors">
+                              <ThumbsUp className="w-3 h-3" />
+                              <span>Helpful ({rev.likes})</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-slate-500">No written reviews yet for this SKU.</p>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 

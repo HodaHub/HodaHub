@@ -48,13 +48,12 @@ export const AccountPage: React.FC<AccountPageProps> = ({
     return initialTab;
   });
 
-  // Guard: If unauthenticated visitor arrives at /account, trigger OTP modal and redirect
+  // Guard: If unauthenticated visitor arrives at /account, redirect home
   useEffect(() => {
     if (!isAuthenticated) {
-      openAuthModal('/account');
       onNavigate('home');
     }
-  }, [isAuthenticated, openAuthModal, onNavigate]);
+  }, [isAuthenticated, onNavigate]);
 
   // Tab switcher
   const handleSelectTab = (tab: AccountTab) => {

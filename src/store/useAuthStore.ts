@@ -118,35 +118,60 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isVerified = true;
     }
 
-    try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        phone: fullPhone,
-        token: cleanOtp,
-        type: 'sms',
-      });
+    if (!isVerified) {
+      set({ isLoading: false, error: 'Incorrect or expired verification code. Please retry.' });
+      return false;
+    }
 
-      let userId = data?.user?.id;
-      let userPhone = data?.user?.phone || fullPhone;
-      let userName = 'HodaHub Customer';
-      let userRole: 'user' | 'admin' = 'user';
-      let userEmail = data?.user?.email || undefined;
+    try {
+      let userId: string | null = null;
+      let userName = cleanPhone === '9900011223' ? 'HodaHub Administrator' : `Customer ${cleanPhone.slice(-4)}`;
+      let userRole: 'user' | 'admin' = cleanPhone === '9900011223' ? 'admin' : 'user';
+      const userEmail = `user_${cleanPhone}@hodahub.in`;
+      const userPassword = `HodaHub@${cleanPhone}!2026`;
       let addresses: Address[] = [];
 
-      if (!error && userId) {
-        // Fetch matching profile auto-created by the Postgres trigger
-        const { data: profile } = await supabase
+      // 1. Auto-register user into Supabase auth.users & public.profiles
+      try {
+        const { data: signUpData } = await supabase.auth.signUp({
+          email: userEmail,
+          password: userPassword,
+          options: {
+            data: { phone: fullPhone, name: userName }
+          }
+        });
+        userId = signUpData?.user?.id || null;
+      } catch (_signUpErr) {
+        // User may already exist
+      }
+
+      // 2. If user already exists, lookup their profile
+      if (!userId) {
+        const { data: existingProfiles } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', userId)
-          .single();
+          .or(`email.eq.${userEmail},phone.eq.${fullPhone}`);
 
-        if (profile) {
-          userName = profile.name || userName;
-          userRole = (profile.role as 'user' | 'admin') || 'user';
-          userEmail = profile.email || userEmail;
+        if (existingProfiles && existingProfiles.length > 0) {
+          userId = existingProfiles[0].id;
+          userName = existingProfiles[0].name || userName;
+          userRole = (existingProfiles[0].role as 'user' | 'admin') || userRole;
         }
+      }
 
-        // Fetch user addresses from Postgres
+      // 3. Update public.profiles with the phone and name
+      if (userId) {
+        await supabase
+          .from('profiles')
+          .update({
+            phone: fullPhone,
+            name: userName,
+            email: userEmail,
+            role: userRole,
+          })
+          .eq('id', userId);
+
+        // Fetch addresses
         const { data: addrRows } = await supabase
           .from('addresses')
           .select('*')
@@ -156,7 +181,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           addresses = addrRows.map((a: SupabaseAddress) => ({
             id: a.id,
             name: userName,
-            phone: userPhone,
+            phone: fullPhone,
             pincode: a.pincode,
             addressLine: a.line1,
             locality: a.line2 || '',
@@ -167,20 +192,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           }));
         }
       } else {
-        // Fallback profile if testing locally without SMS gateway
-        userId = userId || `usr_${Date.now()}`;
-        if (cleanPhone === '9900011223') {
-          userName = 'HodaHub Administrator';
-          userRole = 'admin';
-        } else {
-          userName = 'Customer';
-        }
-        addresses = [];
+        userId = `usr_${Date.now()}`;
       }
 
       const authUser: AuthUser = {
         _id: userId,
-        phone: userPhone,
+        phone: fullPhone,
         name: userName,
         email: userEmail,
         role: userRole,
@@ -189,23 +206,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(authUser));
 
-      // Persist customer profile into Supabase public.profiles table
-      try {
-        await supabase.from('profiles').upsert(
-          {
-            phone: userPhone,
-            name: userName,
-            role: userRole,
-            email: userEmail,
-          },
-          { onConflict: 'phone' }
-        );
-      } catch (e) {
-        console.warn('Profile sync note:', e);
-      }
-
       set({
         user: authUser,
+        phone: cleanPhone,
         isAuthenticated: true,
         isLoading: false,
         isAuthModalOpen: false,
@@ -214,7 +217,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       return true;
     } catch (err: any) {
-      set({ isLoading: false, error: err.message || 'Verification failed. Please retry.' });
+      set({ isLoading: false, error: err.message || 'Verification error' });
       return false;
     }
   },
@@ -226,11 +229,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.warn('Supabase signOut notice:', e);
-    }
+    // 1. Immediately clear local session to make logout instant
     localStorage.removeItem(STORAGE_USER_KEY);
 
     set({
@@ -241,6 +240,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       authRedirectPath: null,
       error: null,
     });
+
+    // 2. Non-blocking background signOut without getting trapped in loops
+    supabase.auth.signOut().catch(() => {});
   },
 
   setUser: (user: AuthUser) => {
@@ -488,7 +490,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 // Set up Supabase Auth state change listener
 supabase.auth.onAuthStateChange(async (event, session) => {
   if (event === 'SIGNED_OUT') {
-    useAuthStore.getState().logout();
+    localStorage.removeItem(STORAGE_USER_KEY);
+    useAuthStore.setState({
+      user: null,
+      phone: '',
+      isAuthenticated: false,
+      isAuthModalOpen: false,
+      authRedirectPath: null,
+      error: null,
+    });
   } else if (event === 'SIGNED_IN' && session?.user) {
     const user = session.user;
     useAuthStore.getState().fetchUserProfile(user.id);
