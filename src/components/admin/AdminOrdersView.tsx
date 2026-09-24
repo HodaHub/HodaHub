@@ -128,17 +128,17 @@ export const AdminOrdersView: React.FC = () => {
       )}
 
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight">Orders Fulfillment Control</h2>
+          <h2 className="text-lg font-bold text-slate-900 tracking-tight">Orders Fulfillment</h2>
           <p className="text-xs text-slate-500">
-            Dispatch queue, logistics tracking, delivery scheduling, and guest order operations.
+            Dispatch queue, logistics tracking, delivery scheduling, and fulfillment operations.
           </p>
         </div>
         <button
           onClick={loadOrders}
           disabled={loading}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs cursor-pointer disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200/90 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 shadow-xs cursor-pointer disabled:opacity-50 transition-colors"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           <span>Refresh Queue</span>
@@ -146,25 +146,25 @@ export const AdminOrdersView: React.FC = () => {
       </div>
 
       {/* Filters & Search */}
-      <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
+      <div className="bg-white border border-slate-200/80 rounded-xl p-3 sm:p-4 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
         <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search by Order ID, Customer, or Phone..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-primary-500 font-sans"
+            className="w-full pl-8.5 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-slate-400 transition-colors"
           />
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="w-4 h-4 text-slate-400" />
+          <Filter className="w-3.5 h-3.5 text-slate-400" />
           <span className="text-xs text-slate-500 font-medium">Status:</span>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none font-medium cursor-pointer"
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none font-medium cursor-pointer"
           >
             <option value="ALL">All Order Statuses</option>
             <option value="delivery_date_pending">Delivery Date Pending</option>
@@ -177,7 +177,7 @@ export const AdminOrdersView: React.FC = () => {
       </div>
 
       {/* Orders Table */}
-      <div className="bg-white border border-slate-200/90 rounded-xl shadow-xs overflow-hidden">
+      <div className="bg-white border border-slate-200/80 rounded-xl shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono uppercase text-[10px]">

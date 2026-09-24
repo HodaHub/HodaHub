@@ -1,9 +1,25 @@
 /**
  * WhatsApp OTP Client Service
  * Connects to the local/self-hosted WhatsApp Gateway (port 3001)
+ * Works seamlessly across PC localhost and mobile devices on LAN via Vite proxy.
  */
 
-const GATEWAY_URL = (import.meta.env.VITE_WHATSAPP_GATEWAY_URL as string) || 'http://localhost:3001';
+const FALLBACK_GATEWAY_URL = 'http://localhost:3001';
+
+const callGateway = async (endpoint: string, options?: RequestInit): Promise<Response> => {
+  // 1. Try Vite proxy endpoint first (works on both PC and mobile on LAN)
+  try {
+    const res = await fetch(`/whatsapp-api${endpoint}`, options);
+    if (res.status !== 404 && res.status !== 502) {
+      return res;
+    }
+  } catch {
+    // ignore and try direct port 3001
+  }
+
+  // 2. Direct port 3001 fallback
+  return await fetch(`${FALLBACK_GATEWAY_URL}${endpoint}`, options);
+};
 
 export interface WhatsAppGatewayStatus {
   isConnected: boolean;
@@ -13,7 +29,7 @@ export interface WhatsAppGatewayStatus {
 
 export const checkWhatsAppGateway = async (): Promise<WhatsAppGatewayStatus> => {
   try {
-    const res = await fetch(`${GATEWAY_URL}/status`, {
+    const res = await callGateway('/status', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -33,7 +49,7 @@ export const sendWhatsAppOtp = async (
   }
 
   try {
-    const res = await fetch(`${GATEWAY_URL}/send-otp`, {
+    const res = await callGateway('/send-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: cleanPhone }),
@@ -63,7 +79,7 @@ export const verifyWhatsAppOtp = async (
   const cleanOtp = otp.trim();
 
   try {
-    const res = await fetch(`${GATEWAY_URL}/verify-otp`, {
+    const res = await callGateway('/verify-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone: cleanPhone, otp: cleanOtp }),

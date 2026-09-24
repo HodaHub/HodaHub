@@ -16,6 +16,11 @@ import {
   Users,
   Eye,
   Globe,
+  MessageSquare,
+  Send,
+  ShieldCheck,
+  Check,
+  ExternalLink,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -27,7 +32,6 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { adminApi, AdminOrder } from '../../lib/adminApi';
-import { PRODUCTS } from '../../data/products';
 import { formatPrice } from '../../lib/utils';
 import { AdminTab } from './AdminLayout';
 import {
@@ -35,6 +39,11 @@ import {
   getHistoricalVisitStats,
   HistoricalVisitStats,
 } from '../../lib/visitorTracker';
+import {
+  checkWhatsAppGateway,
+  sendWhatsAppOtp,
+  WhatsAppGatewayStatus,
+} from '../../lib/whatsappOtp';
 
 interface AdminDashboardViewProps {
   onNavigateTab: (tab: AdminTab) => void;
@@ -55,19 +64,30 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
     topPages: [],
   });
 
+  // WhatsApp Gateway State
+  const [waStatus, setWaStatus] = useState<WhatsAppGatewayStatus>({
+    isConnected: false,
+    hasQr: false,
+  });
+  const [testPhone, setTestPhone] = useState('');
+  const [testingOtp, setTestingOtp] = useState(false);
+  const [otpFeedback, setOtpFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const [orderList, productList, customerList, stats] = await Promise.all([
+      const [orderList, productList, customerList, stats, wa] = await Promise.all([
         adminApi.getOrders(),
         adminApi.getProducts(),
         adminApi.getCustomers(),
         getHistoricalVisitStats(),
+        checkWhatsAppGateway(),
       ]);
       setOrders(orderList || []);
       setProducts(productList || []);
       setCustomerCount(customerList?.length || 0);
       setVisitStats(stats);
+      setWaStatus(wa);
     } catch (err) {
       console.error('Failed to load dashboard telemetry:', err);
     } finally {
@@ -78,7 +98,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
   useEffect(() => {
     loadData();
 
-    // Subscribe to Supabase Realtime Presence channel for live visitor tracking (zero polling)
+    // Subscribe to live visitor tracking
     const unsubscribe = subscribeLiveVisitors((count, paths) => {
       setLiveVisitorsCount(count);
       setLivePaths(paths);
@@ -89,9 +109,33 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
     };
   }, []);
 
-  // Real-time metrics calculations (Directly computed from Supabase tables)
+  const handleSendTestOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = testPhone.replace(/\D/g, '').slice(-10);
+    if (clean.length !== 10) {
+      setOtpFeedback({ success: false, msg: 'Please enter a valid 10-digit number.' });
+      return;
+    }
+
+    setTestingOtp(true);
+    setOtpFeedback(null);
+    try {
+      const res = await sendWhatsAppOtp(clean);
+      if (res.success) {
+        setOtpFeedback({ success: true, msg: `OTP sent to +91 ${clean}! Check WhatsApp.` });
+      } else {
+        setOtpFeedback({ success: false, msg: res.error || 'Failed to dispatch OTP' });
+      }
+    } catch (err: any) {
+      setOtpFeedback({ success: false, msg: err.message || 'Error communicating with gateway' });
+    } finally {
+      setTestingOtp(false);
+    }
+  };
+
+  // Metrics
   const totalRevenue = orders.reduce((sum, o) => sum + (Number(o.pricing?.total) || 0), 0);
-  
+
   const todayOrders = orders.filter((o) => {
     if (!o.createdAt) return false;
     const d = new Date(o.createdAt);
@@ -105,7 +149,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
 
   const lowStockCount = products.filter((p) => Number(p.stockCount ?? p.stock ?? 0) < 10).length;
 
-  // Chart data: Group REAL orders by calendar day for 7d or 30d
+  // Chart data
   const daysCount = timeRange === '7d' ? 7 : 30;
   const chartData = Array.from({ length: daysCount }).map((_, idx) => {
     const day = new Date();
@@ -132,299 +176,298 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
   });
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner / Refresh bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
+    <div className="space-y-5">
+      {/* 1. MINIMAL HEADER & REFRESH */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight">Executive Dashboard</h2>
+          <h2 className="text-lg font-bold text-slate-900 tracking-tight">Overview</h2>
           <p className="text-xs text-slate-500">
-            Real-time telemetry and order dispatch activity for HodaHub store.
+            Real-time store metrics, fulfillment pipeline, and messaging gateway.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={loadData}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200/90 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh Telemetry</span>
+            <span>Refresh</span>
           </button>
         </div>
       </div>
 
-      {/* 0. REAL-TIME VISITOR TRACKING & TELEMETRY (Supabase Realtime Presence) */}
-      <div className="bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white rounded-2xl p-5 sm:p-6 shadow-xl border border-slate-800 relative overflow-hidden">
-        {/* Subtle background glow */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-1/3 w-64 h-64 bg-primary-500/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          {/* Live Visitors Right Now */}
-          <div className="space-y-3">
+      {/* 2. REAL-TIME ACTIVITY & WHATSAPP GATEWAY (Minimal, Cohesive 2-Card Row) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Real-time Visitor Telemetry (2 cols) */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200/80 p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
-              <span className="relative flex h-3.5 w-3.5">
+              <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 shadow-sm shadow-emerald-400/50" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
               </span>
-              <span className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
-                <Radio className="w-3.5 h-3.5 animate-pulse" />
-                Supabase Realtime Presence
-              </span>
+              <span className="text-xs font-semibold text-slate-900">Live Traffic Telemetry</span>
             </div>
-
-            <div className="flex items-baseline gap-3">
-              <span className="text-3xl sm:text-4xl font-black font-mono tracking-tight text-white">
-                {liveVisitorsCount}
-              </span>
-              <span className="text-base sm:text-lg font-bold text-slate-200">
-                people browsing right now
-              </span>
+            <div className="text-[11px] font-mono text-slate-400">
+              Instant Session Tracker
             </div>
-
-            <p className="text-xs text-slate-400 max-w-md">
-              Instant live session tracking across HodaHub storefront. Realtime Presence registers active tabs and auto-drops sessions when users close windows with 0 polling.
-            </p>
-
-            {/* Active Browsing Paths Pill Preview */}
-            {livePaths.length > 0 && (
-              <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                <span className="text-[11px] text-slate-400 font-medium">Active routes:</span>
-                {Array.from(new Set(livePaths)).slice(0, 4).map((path, idx) => (
-                  <span
-                    key={idx}
-                    className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-slate-800/80 text-emerald-300 border border-slate-700"
-                  >
-                    {path}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
 
-          {/* Historical Visits Summary (Today, This Week, This Month) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full lg:w-auto flex-shrink-0">
-            {/* Today */}
-            <div className="bg-slate-800/70 backdrop-blur-md rounded-xl p-4 border border-slate-700/80 min-w-[150px]">
-              <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
-                <span>Today</span>
-                <Eye className="w-3.5 h-3.5 text-primary-400" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3">
+            <div>
+              <div className="text-[11px] font-medium text-slate-400">Active Now</div>
+              <div className="text-2xl font-black font-mono text-slate-900 mt-0.5">
+                {liveVisitorsCount}
               </div>
-              <div className="text-xl font-black font-mono text-white">
+              <div className="text-[10px] text-emerald-600 font-medium mt-0.5">browsing store</div>
+            </div>
+
+            <div>
+              <div className="text-[11px] font-medium text-slate-400">Today's Views</div>
+              <div className="text-2xl font-black font-mono text-slate-900 mt-0.5">
                 {visitStats.today.pageViews.toLocaleString()}
               </div>
-              <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                <span>Pageviews</span>
-                <span className="text-emerald-400 font-bold font-mono">
-                  {visitStats.today.uniqueVisitors.toLocaleString()} unique
-                </span>
+              <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                {visitStats.today.uniqueVisitors.toLocaleString()} unique
               </div>
             </div>
 
-            {/* This Week */}
-            <div className="bg-slate-800/70 backdrop-blur-md rounded-xl p-4 border border-slate-700/80 min-w-[150px]">
-              <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
-                <span>This Week</span>
-                <Users className="w-3.5 h-3.5 text-emerald-400" />
-              </div>
-              <div className="text-xl font-black font-mono text-white">
+            <div>
+              <div className="text-[11px] font-medium text-slate-400">This Week</div>
+              <div className="text-2xl font-black font-mono text-slate-900 mt-0.5">
                 {visitStats.thisWeek.pageViews.toLocaleString()}
               </div>
-              <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                <span>Pageviews</span>
-                <span className="text-emerald-400 font-bold font-mono">
-                  {visitStats.thisWeek.uniqueVisitors.toLocaleString()} unique
-                </span>
+              <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                {visitStats.thisWeek.uniqueVisitors.toLocaleString()} unique
               </div>
             </div>
 
-            {/* This Month */}
-            <div className="bg-slate-800/70 backdrop-blur-md rounded-xl p-4 border border-slate-700/80 min-w-[150px]">
-              <div className="flex items-center justify-between text-slate-400 text-xs font-semibold mb-1">
-                <span>This Month</span>
-                <Globe className="w-3.5 h-3.5 text-amber-400" />
-              </div>
-              <div className="text-xl font-black font-mono text-white">
+            <div>
+              <div className="text-[11px] font-medium text-slate-400">This Month</div>
+              <div className="text-2xl font-black font-mono text-slate-900 mt-0.5">
                 {visitStats.thisMonth.pageViews.toLocaleString()}
               </div>
-              <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-                <span>Pageviews</span>
-                <span className="text-emerald-400 font-bold font-mono">
-                  {visitStats.thisMonth.uniqueVisitors.toLocaleString()} unique
-                </span>
+              <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                {visitStats.thisMonth.uniqueVisitors.toLocaleString()} unique
               </div>
             </div>
           </div>
+
+          {livePaths.length > 0 && (
+            <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] text-slate-400">Active:</span>
+              {Array.from(new Set(livePaths)).slice(0, 4).map((path, idx) => (
+                <span
+                  key={idx}
+                  className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-700"
+                >
+                  {path}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* WhatsApp Gateway Status & Test Tool (1 col) */}
+        <div className="bg-white rounded-xl border border-slate-200/80 p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-semibold text-slate-900">WhatsApp OTP Gateway</span>
+              </div>
+              {waStatus.isConnected ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/70">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Online
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  Disconnected
+                </span>
+              )}
+            </div>
+
+            <div className="py-2.5 space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500">Linked Number:</span>
+                <span className="font-mono font-bold text-slate-900">
+                  {waStatus.userPhone ? `+${waStatus.userPhone}` : 'No phone linked'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500">Session Status:</span>
+                <span className="text-slate-700 font-medium">
+                  {waStatus.isConnected ? 'Persistent (No QR needed)' : 'Needs Start / QR'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 pt-1 leading-snug">
+                Once paired, WhatsApp keeps the session permanently stored in <code className="bg-slate-100 px-1 py-0.2 rounded font-mono text-slate-600">.whatsapp_session</code>. You do not need to scan again.
+              </p>
+            </div>
+          </div>
+
+          {/* Quick OTP Test Tool */}
+          <form onSubmit={handleSendTestOtp} className="pt-2 border-t border-slate-100 space-y-2">
+            <div className="text-[11px] font-semibold text-slate-700">Test WhatsApp Delivery:</div>
+            <div className="flex gap-1.5">
+              <input
+                type="tel"
+                placeholder="10-digit phone"
+                value={testPhone}
+                onChange={(e) => setTestPhone(e.target.value)}
+                maxLength={10}
+                className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+              />
+              <button
+                type="submit"
+                disabled={testingOtp || !waStatus.isConnected}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-medium flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+              >
+                {testingOtp ? (
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Send className="w-3 h-3" />
+                )}
+                <span>Send</span>
+              </button>
+            </div>
+            {otpFeedback && (
+              <div
+                className={`text-[11px] font-medium ${
+                  otpFeedback.success ? 'text-emerald-700' : 'text-rose-600'
+                }`}
+              >
+                {otpFeedback.msg}
+              </div>
+            )}
+          </form>
         </div>
       </div>
 
-      {/* 1. KEY PERFORMANCE INDICATORS (KPIs) - Live Telemetry from Supabase */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      {/* 3. MINIMAL UNIFIED KPI METRIC CARDS */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {/* KPI 1: Today's Orders */}
-        <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-xs hover:border-primary-300 transition-colors">
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider font-mono">Today's Orders</span>
-            <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <ShoppingBag className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-slate-900 font-mono">
+        <div className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs">
+          <div className="text-[11px] font-medium text-slate-500">Today's Orders</div>
+          <div className="text-xl font-black text-slate-900 font-mono mt-1">
             {todayOrders}
           </div>
-          <div className="mt-2 text-[11px] text-slate-500 font-medium truncate">
-            {orders.length} total store orders
-          </div>
+          <div className="text-[10px] text-slate-400 mt-1 font-mono">{orders.length} total</div>
         </div>
 
         {/* KPI 2: Total Revenue */}
-        <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-xs hover:border-primary-300 transition-colors">
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider font-mono">Total Revenue</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <TrendingUp className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-slate-900 font-mono">
+        <div className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs">
+          <div className="text-[11px] font-medium text-slate-500">Gross Revenue</div>
+          <div className="text-xl font-black text-slate-900 font-mono mt-1">
             {formatPrice(totalRevenue)}
           </div>
-          <div className="mt-2 text-[11px] text-slate-500 font-medium truncate">
-            {orders.filter((o) => o.paymentStatus === 'completed').length} paid transactions
+          <div className="text-[10px] text-slate-400 mt-1 font-mono">
+            {orders.filter((o) => o.paymentStatus === 'completed').length} paid
           </div>
         </div>
 
-        {/* KPI 3: Pending Shipments */}
+        {/* KPI 3: Pending Dispatch */}
         <div
           onClick={() => onNavigateTab('orders')}
-          className="bg-white border border-amber-200/80 rounded-xl p-4 shadow-xs hover:border-amber-400 transition-all cursor-pointer group"
+          className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:border-slate-400 transition-colors cursor-pointer group"
         >
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider font-mono text-amber-900">
-              Pending Shipments
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <Clock className="w-3.5 h-3.5" />
-            </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-slate-500">Pending Dispatch</span>
+            <ChevronRight className="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
           </div>
-          <div className="text-2xl font-black text-amber-950 font-mono">
+          <div className="text-xl font-black text-amber-600 font-mono mt-1">
             {pendingShipments}
           </div>
-          <div className="mt-2 flex items-center gap-1 text-[11px] text-amber-700 font-medium">
-            <span>Awaiting dispatch</span>
-            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-          </div>
+          <div className="text-[10px] text-amber-700/80 mt-1">needs delivery date</div>
         </div>
 
-        {/* KPI 4: Low-Stock Alerts */}
+        {/* KPI 4: Low Stock */}
         <div
           onClick={() => onNavigateTab('products')}
-          className="bg-white border border-rose-200/80 rounded-xl p-4 shadow-xs hover:border-rose-400 transition-all cursor-pointer group"
+          className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:border-slate-400 transition-colors cursor-pointer group"
         >
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider font-mono text-rose-900">
-              Low-Stock Alerts
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <AlertTriangle className="w-3.5 h-3.5" />
-            </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-slate-500">Low Stock SKUs</span>
+            <ChevronRight className="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
           </div>
-          <div className="text-2xl font-black text-rose-950 font-mono">
+          <div className="text-xl font-black text-rose-600 font-mono mt-1">
             {lowStockCount}
           </div>
-          <div className="mt-2 flex items-center gap-1 text-[11px] text-rose-700 font-medium">
-            <span>SKUs &lt; 10 units</span>
-            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-          </div>
+          <div className="text-[10px] text-rose-700/80 mt-1">&lt; 10 units in stock</div>
         </div>
 
-        {/* KPI 5: Active Products */}
+        {/* KPI 5: Active Catalog */}
         <div
           onClick={() => onNavigateTab('products')}
-          className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-xs hover:border-indigo-300 transition-all cursor-pointer group"
+          className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:border-slate-400 transition-colors cursor-pointer group"
         >
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider font-mono text-indigo-900">
-              Catalog Items
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <Package className="w-3.5 h-3.5" />
-            </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-slate-500">Products</span>
+            <ChevronRight className="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
           </div>
-          <div className="text-2xl font-black text-indigo-950 font-mono">
+          <div className="text-xl font-black text-slate-900 font-mono mt-1">
             {products.length}
           </div>
-          <div className="mt-2 flex items-center gap-1 text-[11px] text-indigo-700 font-medium">
-            <span>Active SKUs in store</span>
-            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-          </div>
+          <div className="text-[10px] text-slate-400 mt-1">active in catalog</div>
         </div>
 
-        {/* KPI 6: Registered Customers */}
+        {/* KPI 6: Customers */}
         <div
           onClick={() => onNavigateTab('customers')}
-          className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-xs hover:border-purple-300 transition-all cursor-pointer group"
+          className="bg-white border border-slate-200/80 rounded-xl p-3.5 shadow-xs hover:border-slate-400 transition-colors cursor-pointer group"
         >
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider font-mono text-purple-900">
-              Customers
-            </span>
-            <div className="w-7 h-7 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <Users className="w-3.5 h-3.5" />
-            </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-slate-500">Customers</span>
+            <ChevronRight className="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
           </div>
-          <div className="text-2xl font-black text-purple-950 font-mono">
+          <div className="text-xl font-black text-slate-900 font-mono mt-1">
             {customerCount}
           </div>
-          <div className="mt-2 flex items-center gap-1 text-[11px] text-purple-700 font-medium">
-            <span>Verified accounts</span>
-            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-          </div>
+          <div className="text-[10px] text-slate-400 mt-1">registered accounts</div>
         </div>
       </div>
 
-      {/* 2. SALES ANALYTICS CHART (RECHARTS) */}
-      <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* 4. REVENUE TRAJECTORY CHART (Clean Minimal Recharts) */}
+      <div className="bg-white border border-slate-200/80 rounded-xl p-4 sm:p-5 shadow-xs space-y-3">
+        <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <span>Revenue & Order Trajectory</span>
-              <span className="text-[10px] font-mono px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200">
-                Live Supabase Feed
-              </span>
-            </h3>
-            <p className="text-xs text-slate-500">Gross merchandizing value across HodaHub fulfillment</p>
+            <h3 className="text-xs font-bold text-slate-900">Revenue & Order Volume</h3>
+            <p className="text-[11px] text-slate-400">Fulfillment settlement trajectory</p>
           </div>
-          <div className="flex items-center bg-slate-100 p-1 rounded-lg">
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-medium">
             <button
               onClick={() => setTimeRange('7d')}
-              className={`px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-md text-xs transition-all cursor-pointer ${
                 timeRange === '7d'
-                  ? 'bg-white text-slate-900 shadow-xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white text-slate-900 font-semibold shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              Last 7 Days
+              7 Days
             </button>
             <button
               onClick={() => setTimeRange('30d')}
-              className={`px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-md text-xs transition-all cursor-pointer ${
                 timeRange === '30d'
-                  ? 'bg-white text-slate-900 shadow-xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white text-slate-900 font-semibold shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              Last 30 Days
+              30 Days
             </button>
           </div>
         </div>
 
-        {/* Recharts Area Chart Container */}
-        <div className="h-72 w-full pt-2">
+        <div className="h-64 w-full pt-1">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
+            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
-                <linearGradient id="hodaRevenueGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.0} />
+                <linearGradient id="cleanRevenueGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#0f172a" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#0f172a" stopOpacity={0.0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -432,13 +475,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                 dataKey="date"
                 tickLine={false}
                 stroke="#94a3b8"
-                fontSize={11}
-                tickMargin={8}
+                fontSize={10}
+                tickMargin={6}
               />
               <YAxis
                 tickLine={false}
                 stroke="#94a3b8"
-                fontSize={11}
+                fontSize={10}
                 tickFormatter={(val) => (val >= 1000 ? `₹${(val / 1000).toFixed(0)}k` : `₹${val}`)}
               />
               <Tooltip
@@ -446,13 +489,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
                   if (active && payload && payload.length) {
                     const data = payload[0].payload;
                     return (
-                      <div className="bg-slate-900 text-white p-3 rounded-lg shadow-xl text-xs space-y-1 font-sans border border-slate-800">
-                        <div className="font-bold text-slate-300 font-mono">{label}</div>
-                        <div className="text-primary-400 font-mono text-sm font-bold">
+                      <div className="bg-slate-900 text-white px-3 py-2 rounded-lg shadow-lg text-xs space-y-0.5 border border-slate-800">
+                        <div className="text-[10px] text-slate-400 font-mono">{label}</div>
+                        <div className="font-mono font-bold text-white text-sm">
                           {formatPrice(data.revenue)}
                         </div>
-                        <div className="text-slate-400 text-[11px]">
-                          {data.orders} orders processed
+                        <div className="text-slate-400 text-[10px]">
+                          {data.orders} orders placed
                         </div>
                       </div>
                     );
@@ -463,178 +506,171 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onNaviga
               <Area
                 type="monotone"
                 dataKey="revenue"
-                stroke="#4f46e5"
-                strokeWidth={2.5}
+                stroke="#0f172a"
+                strokeWidth={2}
                 fillOpacity={1}
-                fill="url(#hodaRevenueGrad)"
+                fill="url(#cleanRevenueGrad)"
               />
             </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* 3. RECENT ORDERS TABLE & QUICK ACTIONS */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* 5. LATEST ORDERS & QUICK SHORTCUTS (Minimal Layout) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Recent Orders List (2 cols) */}
-        <div className="lg:col-span-2 bg-white border border-slate-200/90 rounded-xl p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between">
+        <div className="lg:col-span-2 bg-white border border-slate-200/80 rounded-xl p-4 sm:p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Latest Customer Orders</h3>
-              <p className="text-xs text-slate-500">Live stream of transactions placed on HodaHub</p>
+              <h3 className="text-xs font-bold text-slate-900">Recent Orders</h3>
+              <p className="text-[11px] text-slate-400">Latest customer transactions</p>
             </div>
             <button
               onClick={() => onNavigateTab('orders')}
-              className="text-xs font-bold text-primary-600 hover:text-primary-700 flex items-center gap-1 cursor-pointer"
+              className="text-xs font-medium text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
             >
-              <span>View All Orders</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
+              <span>All orders</span>
+              <ArrowUpRight className="w-3 h-3" />
             </button>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono uppercase text-[10px]">
+              <thead className="text-slate-400 font-mono uppercase text-[10px] border-b border-slate-100">
                 <tr>
-                  <th className="py-2.5 px-3">Order ID</th>
-                  <th className="py-2.5 px-3">Customer</th>
-                  <th className="py-2.5 px-3">Amount</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3">Delivery Date</th>
+                  <th className="py-2 px-2">Order ID</th>
+                  <th className="py-2 px-2">Customer</th>
+                  <th className="py-2 px-2">Amount</th>
+                  <th className="py-2 px-2">Status</th>
+                  <th className="py-2 px-2 text-right">Delivery Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {orders.slice(0, 5).map((order) => {
-                  const isPending =
-                    !order.estimatedDeliveryDate ||
-                    order.orderStatus === 'delivery_date_pending';
+                {orders.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-slate-400 text-xs">
+                      No customer orders recorded yet.
+                    </td>
+                  </tr>
+                ) : (
+                  orders.slice(0, 5).map((order) => {
+                    const isPending =
+                      !order.estimatedDeliveryDate ||
+                      order.orderStatus === 'delivery_date_pending';
 
-                  return (
-                    <tr
-                      key={order._id}
-                      onClick={() => onNavigateTab('orders')}
-                      className="hover:bg-slate-50/80 transition-colors cursor-pointer"
-                    >
-                      <td className="py-3 px-3 font-mono font-bold text-slate-900">
-                        {order.orderId}
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="font-semibold text-slate-800">
-                          {order.shippingAddress?.name || 'Customer'}
-                        </div>
-                        <div className="text-[10px] text-slate-500">
-                          {order.shippingAddress?.city || 'India'}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 font-mono font-bold text-slate-900">
-                        {formatPrice(order.pricing?.total || 0)}
-                      </td>
-                      <td className="py-3 px-3">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold font-mono ${
-                            order.orderStatus === 'delivered'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : isPending
-                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                              : 'bg-blue-50 text-blue-700 border border-blue-200'
-                          }`}
-                        >
-                          {order.orderStatus.replace(/_/g, ' ')}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 font-mono text-[11px] text-slate-600">
-                        {order.estimatedDeliveryDate ? (
-                          <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                            <Calendar className="w-3 h-3" />
-                            {order.estimatedDeliveryDate}
+                    return (
+                      <tr
+                        key={order._id}
+                        onClick={() => onNavigateTab('orders')}
+                        className="hover:bg-slate-50 transition-colors cursor-pointer"
+                      >
+                        <td className="py-2.5 px-2 font-mono font-semibold text-slate-900">
+                          {order.orderId}
+                        </td>
+                        <td className="py-2.5 px-2">
+                          <div className="font-medium text-slate-800">
+                            {order.shippingAddress?.name || 'Customer'}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {order.shippingAddress?.city || 'India'}
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-2 font-mono font-semibold text-slate-900">
+                          {formatPrice(order.pricing?.total || 0)}
+                        </td>
+                        <td className="py-2.5 px-2">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-medium ${
+                              order.orderStatus === 'delivered'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : isPending
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {order.orderStatus.replace(/_/g, ' ')}
                           </span>
-                        ) : (
-                          <span className="text-amber-600 italic">Not set</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                        <td className="py-2.5 px-2 font-mono text-[11px] text-slate-600 text-right">
+                          {order.estimatedDeliveryDate ? (
+                            <span className="text-slate-800 font-medium">
+                              {order.estimatedDeliveryDate}
+                            </span>
+                          ) : (
+                            <span className="text-amber-600 italic">Not set</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* Quick Operational Actions (1 col) */}
-        <div className="bg-white border border-slate-200/90 rounded-xl p-5 shadow-xs space-y-3">
-          <h3 className="text-sm font-bold text-slate-900">Admin Quick Actions</h3>
-          <p className="text-xs text-slate-500">Fast shortcuts for daily operational tasks</p>
+        {/* Quick Operations (1 col) */}
+        <div className="bg-white border border-slate-200/80 rounded-xl p-4 sm:p-5 shadow-xs space-y-3">
+          <div className="pb-2 border-b border-slate-100">
+            <h3 className="text-xs font-bold text-slate-900">Operations</h3>
+            <p className="text-[11px] text-slate-400">Common administrative actions</p>
+          </div>
 
-          <div className="space-y-2 pt-2">
+          <div className="space-y-1.5 pt-1">
             <button
               onClick={() => onNavigateTab('products')}
-              className="w-full flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-primary-500 hover:bg-primary-50/30 transition-all text-left group cursor-pointer"
+              className="w-full flex items-center justify-between p-2.5 rounded-lg border border-slate-200/70 hover:border-slate-400 hover:bg-slate-50 transition-all text-left cursor-pointer group"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  <Package className="w-4 h-4" />
-                </div>
+              <div className="flex items-center gap-2.5">
+                <Package className="w-4 h-4 text-slate-600" />
                 <div>
-                  <div className="text-xs font-bold text-slate-900 group-hover:text-primary-600">
-                    Add New Product
-                  </div>
-                  <div className="text-[11px] text-slate-500">Upload to Cloudinary catalog</div>
+                  <div className="text-xs font-semibold text-slate-900">Manage Catalog</div>
+                  <div className="text-[10px] text-slate-400">Add or edit products & inventory</div>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+              <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
             </button>
 
             <button
               onClick={() => onNavigateTab('orders')}
-              className="w-full flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-amber-500 hover:bg-amber-50/30 transition-all text-left group cursor-pointer"
+              className="w-full flex items-center justify-between p-2.5 rounded-lg border border-slate-200/70 hover:border-slate-400 hover:bg-slate-50 transition-all text-left cursor-pointer group"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
-                  <Clock className="w-4 h-4" />
-                </div>
+              <div className="flex items-center gap-2.5">
+                <Clock className="w-4 h-4 text-slate-600" />
                 <div>
-                  <div className="text-xs font-bold text-slate-900 group-hover:text-amber-700">
-                    Assign Delivery Dates
-                  </div>
-                  <div className="text-[11px] text-slate-500">{pendingShipments} pending dispatch</div>
+                  <div className="text-xs font-semibold text-slate-900">Fulfill Orders</div>
+                  <div className="text-[10px] text-slate-400">{pendingShipments} awaiting dispatch</div>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-            </button>
-
-            <button
-              onClick={() => onNavigateTab('reviews')}
-              className="w-full flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-yellow-500 hover:bg-yellow-50/30 transition-all text-left group cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-yellow-50 text-yellow-600 flex items-center justify-center">
-                  <Star className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-900 group-hover:text-yellow-700">
-                    Moderate Customer Reviews
-                  </div>
-                  <div className="text-[11px] text-slate-500">Verify genuine purchases</div>
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+              <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
             </button>
 
             <button
               onClick={() => onNavigateTab('coupons')}
-              className="w-full flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/30 transition-all text-left group cursor-pointer"
+              className="w-full flex items-center justify-between p-2.5 rounded-lg border border-slate-200/70 hover:border-slate-400 hover:bg-slate-50 transition-all text-left cursor-pointer group"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                  <TicketPercent className="w-4 h-4" />
-                </div>
+              <div className="flex items-center gap-2.5">
+                <TicketPercent className="w-4 h-4 text-slate-600" />
                 <div>
-                  <div className="text-xs font-bold text-slate-900 group-hover:text-emerald-700">
-                    Create Promo Coupon
-                  </div>
-                  <div className="text-[11px] text-slate-500">Discount codes & campaigns</div>
+                  <div className="text-xs font-semibold text-slate-900">Promo Coupons</div>
+                  <div className="text-[10px] text-slate-400">Manage customer discounts</div>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+              <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+
+            <button
+              onClick={() => onNavigateTab('settings')}
+              className="w-full flex items-center justify-between p-2.5 rounded-lg border border-slate-200/70 hover:border-slate-400 hover:bg-slate-50 transition-all text-left cursor-pointer group"
+            >
+              <div className="flex items-center gap-2.5">
+                <MessageSquare className="w-4 h-4 text-slate-600" />
+                <div>
+                  <div className="text-xs font-semibold text-slate-900">WhatsApp & API Settings</div>
+                  <div className="text-[10px] text-slate-400">Gateway configuration & health</div>
+                </div>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
             </button>
           </div>
         </div>
